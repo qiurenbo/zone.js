@@ -342,6 +342,9 @@ interface _ZonePrivate {
        patchFn: (delegate: Function, delegateName: string, name: string) =>
            (self: any, args: any[]) => any) => Function;
   bindArguments: (args: any[], source: string) => any[];
+  generateUnPatchAndRePatch: (patches: {target: any, methods: string[]}[]) => {
+    unPatchFn: () => void, rePatchFn: () => void
+  };
 }
 
 /** @internal */
@@ -727,8 +730,8 @@ const Zone: ZoneType = (function(global: any) {
     static __reload_patch(name: string): void {
       const patch = patches[name];
       if (patch && patch.rePatchFn && !patch.patched) {
-        patch.patched = true;
         patch.rePatchFn();
+        patch.patched = true;
       }
     }
 
@@ -1386,6 +1389,7 @@ const Zone: ZoneType = (function(global: any) {
         nativeMicroTaskQueuePromise = NativePromise.resolve(0);
       }
     },
+    generateUnPatchAndRePatch: () => null
   };
   let _currentZoneFrame: _ZoneFrame = {parent: null, zone: new Zone(null, null)};
   let _currentTask: Task = null;

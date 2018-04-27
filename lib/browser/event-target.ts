@@ -106,7 +106,7 @@ export function eventTargetPatch(_global: any, api: _ZonePrivate) {
   patchEventTarget(_global, apiTypes, {vh: checkIEAndCrossContext});
   api.patchEventTarget = patchEventTarget;
 
-  return true;
+  return apiTypes;
 }
 
 export function patchEvent(global: any, api: _ZonePrivate) {

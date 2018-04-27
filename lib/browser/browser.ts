@@ -12,7 +12,7 @@
 
 import {findEventTasks} from '../common/events';
 import {patchTimer} from '../common/timers';
-import {bindArguments, patchClass, patchMacroTask, patchMethod, patchOnProperties, patchPrototype, scheduleMacroTaskWithCurrentZone, ZONE_SYMBOL_ADD_EVENT_LISTENER, ZONE_SYMBOL_REMOVE_EVENT_LISTENER, zoneSymbol} from '../common/utils';
+import {bindArguments, generateUnPatchAndRePatch, patchClass, patchMacroTask, patchMethod, patchOnProperties, patchPrototype, scheduleMacroTaskWithCurrentZone, ZONE_SYMBOL_ADD_EVENT_LISTENER, ZONE_SYMBOL_REMOVE_EVENT_LISTENER, zoneSymbol} from '../common/utils';
 
 import {propertyPatch} from './define-property';
 import {eventTargetPatch, patchEvent} from './event-target';
@@ -23,40 +23,30 @@ Zone.__load_patch('util', (global: any, Zone: ZoneType, api: _ZonePrivate) => {
   api.patchOnProperties = patchOnProperties;
   api.patchMethod = patchMethod;
   api.bindArguments = bindArguments;
+  api.generateUnPatchAndRePatch = generateUnPatchAndRePatch;
   return undefined;
 });
 
 Zone.__load_patch('timers', (global: any, Zone: ZoneType, api: _ZonePrivate) => {
   const timerMethods = ['Timeout', 'Interval', 'Immediate'];
   timerMethods.forEach(m => patchTimer(global, 'set', 'clear', m));
-  const patchedMethods: any = {
-    setTimeout: global.setTimeout,
-    setInterval: global.setInterval,
-    Immediate: global.setImmediate
-  };
-  return {
-    unPatchFn: () => {
-      timerMethods.forEach(m => {
-        global['set' + m] = global[api.symbol('set' + m)];
-        global['clear' + m] = global[api.symbol('clear' + m)];
-      });
-    },
-    rePatchFn: () => {
-      timerMethods.forEach(m => {
-        global['set' + m] = patchedMethods['set' + m];
-        global['clear' + m] = patchedMethods['clear' + m];
-      });
-    }
-  };
+  const timerMethodsWithPrefix =
+      timerMethods.map(m => 'set' + m).concat(timerMethods.map(m => 'clear' + m));
+  return api.generateUnPatchAndRePatch([{target: global, methods: timerMethodsWithPrefix}]);
 });
 
-Zone.__load_patch('requestAnimationFrame', (global: any) => {
+Zone.__load_patch('requestAnimationFrame', (global: any, Zone: ZoneType, api: _ZonePrivate) => {
+  const methodsToPatch = [
+    'requestAnimationFrame', 'cancelAnimationFrame', 'mozRequestAnimationFrame',
+    'mozCancelAnimationFrame', 'webkitRequestAnimationFrame', 'webkitCancelAnimationFrame'
+  ];
   patchTimer(global, 'request', 'cancel', 'AnimationFrame');
   patchTimer(global, 'mozRequest', 'mozCancel', 'AnimationFrame');
   patchTimer(global, 'webkitRequest', 'webkitCancel', 'AnimationFrame');
+  return api.generateUnPatchAndRePatch([{target: global, methods: methodsToPatch}]);
 });
 
-Zone.__load_patch('blocking', (global: any, Zone: ZoneType) => {
+Zone.__load_patch('blocking', (global: any, Zone: ZoneType, api: _ZonePrivate) => {
   const blockingMethods = ['alert', 'prompt', 'confirm'];
   for (let i = 0; i < blockingMethods.length; i++) {
     const name = blockingMethods[i];
@@ -66,6 +56,7 @@ Zone.__load_patch('blocking', (global: any, Zone: ZoneType) => {
       };
     });
   }
+  return api.generateUnPatchAndRePatch([{target: global, methods: blockingMethods}]);
 });
 
 Zone.__load_patch('EventTarget', (global: any, Zone: ZoneType, api: _ZonePrivate) => {
@@ -76,15 +67,31 @@ Zone.__load_patch('EventTarget', (global: any, Zone: ZoneType, api: _ZonePrivate
   }
 
   patchEvent(global, api);
-  eventTargetPatch(global, api);
+  const apiTypes: any[] = eventTargetPatch(global, api);
   // patch XMLHttpRequestEventTarget's addEventListener/removeEventListener
   const XMLHttpRequestEventTarget = (global as any)['XMLHttpRequestEventTarget'];
   if (XMLHttpRequestEventTarget && XMLHttpRequestEventTarget.prototype) {
     api.patchEventTarget(global, [XMLHttpRequestEventTarget.prototype]);
   }
+  const methods = ['addEventListener', 'removeEventListener'];
+  return api.generateUnPatchAndRePatch(
+      apiTypes.filter(apiType => !!apiType)
+          .map(apiType => {
+            return {target: apiType, methods: methods};
+          })
+          .concat(
+              typeof Event !== 'undefined' ?
+                  [{target: Event.prototype, methods: ['stopImmediatePropagation']}] :
+                  []));
+});
+
+Zone.__load_patch('Observer', (global: any, Zone: ZoneType, api: _ZonePrivate) => {
   patchClass('MutationObserver');
   patchClass('WebKitMutationObserver');
   patchClass('IntersectionObserver');
+});
+
+Zone.__load_patch('FileReader', (global: any, Zone: ZoneType, api: _ZonePrivate) => {
   patchClass('FileReader');
 });
 

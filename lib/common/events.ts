@@ -621,7 +621,7 @@ export function patchEventPrototype(global: any, api: _ZonePrivate) {
   const Event = global['Event'];
   if (Event && Event.prototype) {
     api.patchMethod(
-        Event.prototype, 'stopImmediatePropagation',
+      Event.prototype, 'stopImmediatePropagation',
         (delegate: Function) => function(self: any, args: any[]) {
           self[IMMEDIATE_PROPAGATION_SYMBOL] = true;
           // we need to call the native stopImmediatePropagation

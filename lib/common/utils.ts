@@ -452,3 +452,29 @@ export function isIEOrEdge() {
   } catch (error) {
   }
 }
+
+export function generateUnPatchAndRePatch(patches: [{target: any, methods: string[]}]) {
+  return {
+    unPatchFn: () => {
+      patches.forEach(patch => {
+        patch.methods.forEach(m => {
+          const originalDelegate = patch.target[zoneSymbol(m)];
+          if (originalDelegate) {
+            patch.target[m] = originalDelegate;
+          }
+        });
+      });
+    },
+    rePatchFn: () => {
+      patches.forEach(patch => {
+        patch.methods.forEach(m => {
+          const method = patch.target[m];
+          const originalDelegate = method && method[zoneSymbol(m)];
+          if (originalDelegate) {
+            patch.target[m] = originalDelegate;
+          }
+        });
+      });
+    }
+  };
+};
