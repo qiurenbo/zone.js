@@ -20,6 +20,7 @@
  */
 var Zone$1 = (function (global) {
     var FUNCTION = 'function';
+    var __mode__ = global['__zone_symbol__Zone_Mode'] || 'default';
     var performance = global['performance'];
     function mark(name) {
         performance && performance['mark'] && performance['mark'](name);
@@ -36,9 +37,8 @@ var Zone$1 = (function (global) {
             this._properties = null;
             this._parent = parent;
             this._name = zoneSpec ? zoneSpec.name || 'unnamed' : '<root>';
-            this._properties = zoneSpec && zoneSpec.properties || {};
-            this._zoneDelegate =
-                new ZoneDelegate(this, this._parent && this._parent._zoneDelegate, zoneSpec);
+            this._properties = (zoneSpec && zoneSpec.properties) || {};
+            this._zoneDelegate = new ZoneDelegate(this, this._parent && this._parent._zoneDelegate, zoneSpec);
         }
         Zone.assertZonePatched = function () {
             if (global['Promise'] !== patches['ZoneAwarePromise']) {
@@ -74,16 +74,65 @@ var Zone$1 = (function (global) {
             enumerable: true,
             configurable: true
         });
+        Zone.__init_patch = function (name, fn) {
+            var perfName = 'Zone:' + name;
+            mark(perfName);
+            var patchResult = fn(global, Zone, _api);
+            patches[name] = {
+                patched: true,
+                unPatchFn: patchResult && patchResult.unPatchFn,
+                rePatchFn: patchResult && patchResult.rePatchFn
+            };
+            performanceMeasure(perfName, perfName);
+        };
         Zone.__load_patch = function (name, fn) {
             if (patches.hasOwnProperty(name)) {
                 throw Error('Already loaded patch: ' + name);
             }
             else if (!global['__Zone_disable_' + name]) {
-                var perfName = 'Zone:' + name;
-                mark(perfName);
-                patches[name] = fn(global, Zone, _api);
-                performanceMeasure(perfName, perfName);
+                if (__mode__ === 'default') {
+                    Zone.__init_patch(name, fn);
+                }
+                else {
+                    patches[name] = fn;
+                }
             }
+        };
+        Zone.__init__ = function () {
+            if (__mode__ === 'lazy') {
+                Object.keys(patches).forEach(function (key) {
+                    var fn = patches[key];
+                    Zone.__init_patch(key, fn);
+                });
+            }
+        };
+        Zone.__unload_patch = function (name) {
+            var patch = patches[name];
+            if (patch && patch.unPatchFn && patch.patched) {
+                patch.patched = false;
+                patch.unPatchFn();
+            }
+        };
+        Zone.__unloadAll_patch = function () {
+            Object.keys(patches).forEach(function (name) {
+                if (patches.hasOwnProperty(name)) {
+                    Zone.__unload_patch(name);
+                }
+            });
+        };
+        Zone.__reload_patch = function (name) {
+            var patch = patches[name];
+            if (patch && patch.rePatchFn && !patch.patched) {
+                patch.rePatchFn();
+                patch.patched = true;
+            }
+        };
+        Zone.__reloadAll_patch = function () {
+            Object.keys(patches).forEach(function (name) {
+                if (patches.hasOwnProperty(name)) {
+                    Zone.__reload_patch(name);
+                }
+            });
         };
         Object.defineProperty(Zone.prototype, "parent", {
             get: function () {
@@ -135,9 +184,15 @@ var Zone$1 = (function (global) {
             if (source === void 0) { source = null; }
             _currentZoneFrame = { parent: _currentZoneFrame, zone: this };
             try {
+                if (__mode__ === 'lazy') {
+                    Zone.__reloadAll_patch();
+                }
                 return this._zoneDelegate.invoke(this, callback, applyThis, applyArgs, source);
             }
             finally {
+                if (__mode__ === 'lazy') {
+                    Zone.__unloadAll_patch();
+                }
                 _currentZoneFrame = _currentZoneFrame.parent;
             }
         };
@@ -147,6 +202,9 @@ var Zone$1 = (function (global) {
             if (source === void 0) { source = null; }
             _currentZoneFrame = { parent: _currentZoneFrame, zone: this };
             try {
+                if (__mode__ === 'lazy') {
+                    Zone.__reloadAll_patch();
+                }
                 try {
                     return this._zoneDelegate.invoke(this, callback, applyThis, applyArgs, source);
                 }
@@ -157,13 +215,19 @@ var Zone$1 = (function (global) {
                 }
             }
             finally {
+                if (__mode__ === 'lazy') {
+                    Zone.__unloadAll_patch();
+                }
                 _currentZoneFrame = _currentZoneFrame.parent;
             }
         };
         Zone.prototype.runTask = function (task, applyThis, applyArgs) {
             if (task.zone != this) {
                 throw new Error('A task can only be run in the zone of creation! (Creation: ' +
-                    (task.zone || NO_ZONE).name + '; Execution: ' + this.name + ')');
+                    (task.zone || NO_ZONE).name +
+                    '; Execution: ' +
+                    this.name +
+                    ')');
             }
             // https://github.com/angular/zone.js/issues/778, sometimes eventTask
             // will run in notScheduled(canceled) state, we should not try to
@@ -184,6 +248,10 @@ var Zone$1 = (function (global) {
                 if (task.type == macroTask && task.data && !task.data.isPeriodic) {
                     task.cancelFn = null;
                 }
+                // TODO: can be optimized to only reload the patch for this task
+                if (__mode__ === 'lazy') {
+                    Zone.__reloadAll_patch();
+                }
                 try {
                     return this._zoneDelegate.invokeTask(this, task, applyThis, applyArgs);
                 }
@@ -194,6 +262,10 @@ var Zone$1 = (function (global) {
                 }
             }
             finally {
+                // TODO: can be optimized to only reload the patch for this task
+                if (__mode__ === 'lazy') {
+                    Zone.__unloadAll_patch();
+                }
                 // if the task's state is notScheduled or unknown, then it has already been cancelled
                 // we should not reset the state to scheduled
                 if (task.state !== notScheduled && task.state !== unknown) {
@@ -218,8 +290,7 @@ var Zone$1 = (function (global) {
                 var newZone = this;
                 while (newZone) {
                     if (newZone === task.zone) {
-                        throw Error("can not reschedule task to " + this
-                            .name + " which is descendants of the original zone " + task.zone.name);
+                        throw Error("can not reschedule task to " + this.name + " which is descendants of the original zone " + task.zone.name);
                     }
                     newZone = newZone.parent;
                 }
@@ -260,7 +331,10 @@ var Zone$1 = (function (global) {
         Zone.prototype.cancelTask = function (task) {
             if (task.zone != this)
                 throw new Error('A task can only be cancelled in the zone of creation! (Creation: ' +
-                    (task.zone || NO_ZONE).name + '; Execution: ' + this.name + ')');
+                    (task.zone || NO_ZONE).name +
+                    '; Execution: ' +
+                    this.name +
+                    ')');
             task._transitionTo(canceling, scheduled, running);
             try {
                 this._zoneDelegate.cancelTask(this, task);
@@ -303,7 +377,7 @@ var Zone$1 = (function (global) {
     };
     var ZoneDelegate = /** @class */ (function () {
         function ZoneDelegate(zone, parentDelegate, zoneSpec) {
-            this._taskCounts = { 'microTask': 0, 'macroTask': 0, 'eventTask': 0 };
+            this._taskCounts = { microTask: 0, macroTask: 0, eventTask: 0 };
             this.zone = zone;
             this._parentDelegate = parentDelegate;
             this._forkZS = zoneSpec && (zoneSpec && zoneSpec.onFork ? zoneSpec : parentDelegate._forkZS);
@@ -374,23 +448,24 @@ var Zone$1 = (function (global) {
             }
         }
         ZoneDelegate.prototype.fork = function (targetZone, zoneSpec) {
-            return this._forkZS ? this._forkZS.onFork(this._forkDlgt, this.zone, targetZone, zoneSpec) :
-                new Zone(targetZone, zoneSpec);
+            return this._forkZS
+                ? this._forkZS.onFork(this._forkDlgt, this.zone, targetZone, zoneSpec)
+                : new Zone(targetZone, zoneSpec);
         };
         ZoneDelegate.prototype.intercept = function (targetZone, callback, source) {
-            return this._interceptZS ?
-                this._interceptZS.onIntercept(this._interceptDlgt, this._interceptCurrZone, targetZone, callback, source) :
-                callback;
+            return this._interceptZS
+                ? this._interceptZS.onIntercept(this._interceptDlgt, this._interceptCurrZone, targetZone, callback, source)
+                : callback;
         };
         ZoneDelegate.prototype.invoke = function (targetZone, callback, applyThis, applyArgs, source) {
-            return this._invokeZS ?
-                this._invokeZS.onInvoke(this._invokeDlgt, this._invokeCurrZone, targetZone, callback, applyThis, applyArgs, source) :
-                callback.apply(applyThis, applyArgs);
+            return this._invokeZS
+                ? this._invokeZS.onInvoke(this._invokeDlgt, this._invokeCurrZone, targetZone, callback, applyThis, applyArgs, source)
+                : callback.apply(applyThis, applyArgs);
         };
         ZoneDelegate.prototype.handleError = function (targetZone, error) {
-            return this._handleErrorZS ?
-                this._handleErrorZS.onHandleError(this._handleErrorDlgt, this._handleErrorCurrZone, targetZone, error) :
-                true;
+            return this._handleErrorZS
+                ? this._handleErrorZS.onHandleError(this._handleErrorDlgt, this._handleErrorCurrZone, targetZone, error)
+                : true;
         };
         ZoneDelegate.prototype.scheduleTask = function (targetZone, task) {
             var returnTask = task;
@@ -416,9 +491,9 @@ var Zone$1 = (function (global) {
             return returnTask;
         };
         ZoneDelegate.prototype.invokeTask = function (targetZone, task, applyThis, applyArgs) {
-            return this._invokeTaskZS ?
-                this._invokeTaskZS.onInvokeTask(this._invokeTaskDlgt, this._invokeTaskCurrZone, targetZone, task, applyThis, applyArgs) :
-                task.callback.apply(applyThis, applyArgs);
+            return this._invokeTaskZS
+                ? this._invokeTaskZS.onInvokeTask(this._invokeTaskDlgt, this._invokeTaskCurrZone, targetZone, task, applyThis, applyArgs)
+                : task.callback.apply(applyThis, applyArgs);
         };
         ZoneDelegate.prototype.cancelTask = function (targetZone, task) {
             var value;
@@ -437,8 +512,8 @@ var Zone$1 = (function (global) {
             // hasTask should not throw error so other ZoneDelegate
             // can still trigger hasTask callback
             try {
-                return this._hasTaskZS &&
-                    this._hasTaskZS.onHasTask(this._hasTaskDlgt, this._hasTaskCurrZone, targetZone, isEmpty);
+                return (this._hasTaskZS &&
+                    this._hasTaskZS.onHasTask(this._hasTaskDlgt, this._hasTaskCurrZone, targetZone, isEmpty));
             }
             catch (err) {
                 this.handleError(targetZone, err);
@@ -447,7 +522,7 @@ var Zone$1 = (function (global) {
         ZoneDelegate.prototype._updateTaskCount = function (type, count) {
             var counts = this._taskCounts;
             var prev = counts[type];
-            var next = counts[type] = prev + count;
+            var next = (counts[type] = prev + count);
             if (next < 0) {
                 throw new Error('More tasks executed then were scheduled.');
             }
@@ -527,9 +602,7 @@ var Zone$1 = (function (global) {
                 }
             }
             else {
-                throw new Error(this.type + " '" + this.source + "': can not transition to '" + toState + "', expecting state '" + fromState1 + "'" + (fromState2 ?
-                    ' or \'' + fromState2 + '\'' :
-                    '') + ", was '" + this._state + "'.");
+                throw new Error(this.type + " '" + this.source + "': can not transition to '" + toState + "', expecting state '" + fromState1 + "'" + (fromState2 ? " or '" + fromState2 + "'" : '') + ", was '" + this._state + "'.");
             }
         };
         ZoneTask.prototype.toString = function () {
@@ -631,6 +704,7 @@ var Zone$1 = (function (global) {
                 nativeMicroTaskQueuePromise = NativePromise.resolve(0);
             }
         },
+        generateUnPatchAndRePatch: function () { return null; }
     };
     var _currentZoneFrame = { parent: null, zone: new Zone(null, null) };
     var _currentTask = null;
@@ -640,9 +714,19 @@ var Zone$1 = (function (global) {
         return '__zone_symbol__' + name;
     }
     performanceMeasure('Zone', 'Zone');
-    return global['Zone'] = Zone;
-})(typeof window !== 'undefined' && window || typeof self !== 'undefined' && self || global);
+    return (global['Zone'] = Zone);
+})((typeof window !== 'undefined' && window) || (typeof self !== 'undefined' && self) || global);
 
+var __values = (undefined && undefined.__values) || function (o) {
+    var m = typeof Symbol === "function" && o[Symbol.iterator], i = 0;
+    if (m) return m.call(o);
+    return {
+        next: function () {
+            if (o && i >= o.length) o = void 0;
+            return { value: o && o[i++], done: !o };
+        }
+    };
+};
 Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
     var ObjectGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
     var ObjectDefineProperty = Object.defineProperty;
@@ -696,8 +780,7 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
                 handler.call(this, e);
             }
         }
-        catch (err) {
-        }
+        catch (err) { }
     }
     function isThenable(value) {
         return value && value.then;
@@ -764,8 +847,10 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
                 return promise;
             }
             // if (value instanceof ZoneAwarePromise) {
-            if (state !== REJECTED && value instanceof ZoneAwarePromise &&
-                value.hasOwnProperty(symbolState) && value.hasOwnProperty(symbolValue) &&
+            if (state !== REJECTED &&
+                value instanceof ZoneAwarePromise &&
+                value.hasOwnProperty(symbolState) &&
+                value.hasOwnProperty(symbolValue) &&
                 value[symbolState] !== UNRESOLVED) {
                 clearRejectedNoCatch(value);
                 resolvePromise(promise, value[symbolState], value[symbolValue]);
@@ -785,7 +870,7 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
                 var queue = promise[symbolValue];
                 promise[symbolValue] = value;
                 if (promise[symbolFinally] === symbolFinally) {
-                    // the promise is generated by Promise.prototype.finally          
+                    // the promise is generated by Promise.prototype.finally
                     if (state === RESOLVED) {
                         // the state is resolved, should ignore the value
                         // and use parent promise value
@@ -797,11 +882,17 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
                 // do some additional work such as render longStackTrace
                 if (state === REJECTED && value instanceof Error) {
                     // check if longStackTraceZone is here
-                    var trace = Zone.currentTask && Zone.currentTask.data &&
+                    var trace = Zone.currentTask &&
+                        Zone.currentTask.data &&
                         Zone.currentTask.data[creationTrace];
                     if (trace) {
                         // only keep the long stack trace into error when in longStackTraceZone
-                        ObjectDefineProperty(value, CURRENT_TASK_TRACE_SYMBOL, { configurable: true, enumerable: false, writable: true, value: trace });
+                        ObjectDefineProperty(value, CURRENT_TASK_TRACE_SYMBOL, {
+                            configurable: true,
+                            enumerable: false,
+                            writable: true,
+                            value: trace
+                        });
                     }
                 }
                 for (var i = 0; i < queue.length;) {
@@ -811,7 +902,8 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
                     promise[symbolState] = REJECTED_NO_CATCH;
                     try {
                         // try to print more readable error log
-                        throw new Error('Uncaught (in promise): ' + readableObjectToString(value) +
+                        throw new Error('Uncaught (in promise): ' +
+                            readableObjectToString(value) +
                             (value && value.stack ? '\n' + value.stack : ''));
                     }
                     catch (err) {
@@ -843,8 +935,7 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
                     handler.call(this, { rejection: promise[symbolValue], promise: promise });
                 }
             }
-            catch (err) {
-            }
+            catch (err) { }
             promise[symbolState] = REJECTED;
             for (var i = 0; i < _uncaughtPromiseErrors.length; i++) {
                 if (promise === _uncaughtPromiseErrors[i].promise) {
@@ -856,9 +947,13 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
     function scheduleResolveOrReject(promise, zone, chainPromise, onFulfilled, onRejected) {
         clearRejectedNoCatch(promise);
         var promiseState = promise[symbolState];
-        var delegate = promiseState ?
-            (typeof onFulfilled === 'function') ? onFulfilled : forwardResolution :
-            (typeof onRejected === 'function') ? onRejected : forwardRejection;
+        var delegate = promiseState
+            ? typeof onFulfilled === 'function'
+                ? onFulfilled
+                : forwardResolution
+            : typeof onRejected === 'function'
+                ? onRejected
+                : forwardRejection;
         zone.scheduleMicroTask(source, function () {
             try {
                 var parentPromiseValue = promise[symbolValue];
@@ -869,7 +964,9 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
                     chainPromise[symbolParentPromiseState] = promiseState;
                 }
                 // should not pass value to finally callback
-                var value = zone.run(delegate, undefined, isFinallyPromise && delegate !== forwardRejection && delegate !== forwardResolution ? [] : [parentPromiseValue]);
+                var value = zone.run(delegate, undefined, isFinallyPromise && delegate !== forwardRejection && delegate !== forwardResolution
+                    ? []
+                    : [parentPromiseValue]);
                 resolvePromise(chainPromise, true, value);
             }
             catch (error) {
@@ -916,14 +1013,24 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
             function onReject(error) {
                 promise && (promise = null || reject(error));
             }
-            for (var _i = 0, values_1 = values; _i < values_1.length; _i++) {
-                var value = values_1[_i];
-                if (!isThenable(value)) {
-                    value = this.resolve(value);
+            try {
+                for (var values_1 = __values(values), values_1_1 = values_1.next(); !values_1_1.done; values_1_1 = values_1.next()) {
+                    var value = values_1_1.value;
+                    if (!isThenable(value)) {
+                        value = this.resolve(value);
+                    }
+                    value.then(onResolve, onReject);
                 }
-                value.then(onResolve, onReject);
+            }
+            catch (e_1_1) { e_1 = { error: e_1_1 }; }
+            finally {
+                try {
+                    if (values_1_1 && !values_1_1.done && (_a = values_1.return)) _a.call(values_1);
+                }
+                finally { if (e_1) throw e_1.error; }
             }
             return promise;
+            var e_1, _a;
         };
         ZoneAwarePromise.all = function (values) {
             var resolve;
@@ -934,26 +1041,37 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
             });
             var count = 0;
             var resolvedValues = [];
-            for (var _i = 0, values_2 = values; _i < values_2.length; _i++) {
-                var value = values_2[_i];
-                if (!isThenable(value)) {
-                    value = this.resolve(value);
-                }
-                value.then((function (index) { return function (value) {
-                    resolvedValues[index] = value;
-                    count--;
-                    if (!count) {
-                        resolve(resolvedValues);
+            try {
+                for (var values_2 = __values(values), values_2_1 = values_2.next(); !values_2_1.done; values_2_1 = values_2.next()) {
+                    var value = values_2_1.value;
+                    if (!isThenable(value)) {
+                        value = this.resolve(value);
                     }
-                }; })(count), reject);
-                count++;
+                    value.then((function (index) { return function (value) {
+                        resolvedValues[index] = value;
+                        count--;
+                        if (!count) {
+                            resolve(resolvedValues);
+                        }
+                    }; })(count), reject);
+                    count++;
+                }
+            }
+            catch (e_2_1) { e_2 = { error: e_2_1 }; }
+            finally {
+                try {
+                    if (values_2_1 && !values_2_1.done && (_a = values_2.return)) _a.call(values_2);
+                }
+                finally { if (e_2) throw e_2.error; }
             }
             if (!count)
                 resolve(resolvedValues);
             return promise;
+            var e_2, _a;
         };
         ZoneAwarePromise.prototype.then = function (onFulfilled, onRejected) {
-            var chainPromise = new this.constructor(null);
+            var chainPromise = new this
+                .constructor(null);
             var zone = Zone.current;
             if (this[symbolState] == UNRESOLVED) {
                 this[symbolValue].push(zone, chainPromise, onFulfilled, onRejected);
@@ -986,7 +1104,7 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
     ZoneAwarePromise['reject'] = ZoneAwarePromise.reject;
     ZoneAwarePromise['race'] = ZoneAwarePromise.race;
     ZoneAwarePromise['all'] = ZoneAwarePromise.all;
-    var NativePromise = global[symbolPromise] = global['Promise'];
+    var NativePromise = (global[symbolPromise] = global['Promise']);
     var ZONE_AWARE_PROMISE = Zone.__symbol__('ZoneAwarePromise');
     var desc = ObjectGetOwnPropertyDescriptor(global, 'Promise');
     if (!desc || desc.configurable) {
@@ -1067,7 +1185,6 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
     }
     // This is not part of public API, but it is useful for tests, so we expose it.
     Promise[Zone.__symbol__('uncaughtPromiseErrors')] = _uncaughtPromiseErrors;
-    return ZoneAwarePromise;
 });
 
 /**
@@ -1460,6 +1577,31 @@ function isIEOrEdge() {
     }
     catch (error) {
     }
+}
+function generateUnPatchAndRePatch(patches) {
+    return {
+        unPatchFn: function () {
+            patches.forEach(function (patch) {
+                patch.methods.forEach(function (m) {
+                    var originalDelegate = patch.target[zoneSymbol(m)];
+                    if (originalDelegate) {
+                        patch.target[m] = originalDelegate;
+                    }
+                });
+            });
+        },
+        rePatchFn: function () {
+            patches.forEach(function (patch) {
+                patch.methods.forEach(function (m) {
+                    var method = patch.target[m];
+                    var originalDelegate = method && method[zoneSymbol(m)];
+                    if (originalDelegate) {
+                        patch.target[m] = originalDelegate;
+                    }
+                });
+            });
+        }
+    };
 }
 
 /**
@@ -2819,7 +2961,7 @@ function eventTargetPatch(_global, api) {
     // is valid or not(for security check)
     patchEventTarget(_global, apiTypes, { vh: checkIEAndCrossContext });
     api.patchEventTarget = patchEventTarget;
-    return true;
+    return apiTypes;
 }
 function patchEvent(global, api) {
     patchEventPrototype(global, api);
@@ -2878,20 +3020,26 @@ Zone.__load_patch('util', function (global, Zone, api) {
     api.patchOnProperties = patchOnProperties;
     api.patchMethod = patchMethod;
     api.bindArguments = bindArguments;
+    api.generateUnPatchAndRePatch = generateUnPatchAndRePatch;
+    return undefined;
 });
-Zone.__load_patch('timers', function (global) {
-    var set = 'set';
-    var clear = 'clear';
-    patchTimer(global, set, clear, 'Timeout');
-    patchTimer(global, set, clear, 'Interval');
-    patchTimer(global, set, clear, 'Immediate');
+Zone.__load_patch('timers', function (global, Zone, api) {
+    var timerMethods = ['Timeout', 'Interval', 'Immediate'];
+    timerMethods.forEach(function (m) { return patchTimer(global, 'set', 'clear', m); });
+    var timerMethodsWithPrefix = timerMethods.map(function (m) { return 'set' + m; }).concat(timerMethods.map(function (m) { return 'clear' + m; }));
+    return api.generateUnPatchAndRePatch([{ target: global, methods: timerMethodsWithPrefix }]);
 });
-Zone.__load_patch('requestAnimationFrame', function (global) {
+Zone.__load_patch('requestAnimationFrame', function (global, Zone, api) {
+    var methodsToPatch = [
+        'requestAnimationFrame', 'cancelAnimationFrame', 'mozRequestAnimationFrame',
+        'mozCancelAnimationFrame', 'webkitRequestAnimationFrame', 'webkitCancelAnimationFrame'
+    ];
     patchTimer(global, 'request', 'cancel', 'AnimationFrame');
     patchTimer(global, 'mozRequest', 'mozCancel', 'AnimationFrame');
     patchTimer(global, 'webkitRequest', 'webkitCancel', 'AnimationFrame');
+    return api.generateUnPatchAndRePatch([{ target: global, methods: methodsToPatch }]);
 });
-Zone.__load_patch('blocking', function (global, Zone) {
+Zone.__load_patch('blocking', function (global, Zone, api) {
     var blockingMethods = ['alert', 'prompt', 'confirm'];
     for (var i = 0; i < blockingMethods.length; i++) {
         var name_1 = blockingMethods[i];
@@ -2901,6 +3049,7 @@ Zone.__load_patch('blocking', function (global, Zone) {
             };
         });
     }
+    return api.generateUnPatchAndRePatch([{ target: global, methods: blockingMethods }]);
 });
 Zone.__load_patch('EventTarget', function (global, Zone, api) {
     // load blackListEvents from global
@@ -2909,15 +3058,27 @@ Zone.__load_patch('EventTarget', function (global, Zone, api) {
         Zone[SYMBOL_BLACK_LISTED_EVENTS] = global[SYMBOL_BLACK_LISTED_EVENTS];
     }
     patchEvent(global, api);
-    eventTargetPatch(global, api);
+    var apiTypes = eventTargetPatch(global, api);
     // patch XMLHttpRequestEventTarget's addEventListener/removeEventListener
     var XMLHttpRequestEventTarget = global['XMLHttpRequestEventTarget'];
     if (XMLHttpRequestEventTarget && XMLHttpRequestEventTarget.prototype) {
         api.patchEventTarget(global, [XMLHttpRequestEventTarget.prototype]);
     }
+    var methods = ['addEventListener', 'removeEventListener'];
+    return api.generateUnPatchAndRePatch(apiTypes.filter(function (apiType) { return !!apiType; })
+        .map(function (apiType) {
+        return { target: apiType, methods: methods };
+    })
+        .concat(typeof Event !== 'undefined' ?
+        [{ target: Event.prototype, methods: ['stopImmediatePropagation'] }] :
+        []));
+});
+Zone.__load_patch('Observer', function (global, Zone, api) {
     patchClass('MutationObserver');
     patchClass('WebKitMutationObserver');
     patchClass('IntersectionObserver');
+});
+Zone.__load_patch('FileReader', function (global, Zone, api) {
     patchClass('FileReader');
 });
 Zone.__load_patch('on_property', function (global, Zone, api) {
