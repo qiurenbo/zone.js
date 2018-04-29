@@ -20,7 +20,7 @@
  */
 var Zone$1 = (function (global) {
     var FUNCTION = 'function';
-    var __mode__ = global['__zone_symbol__Zone_Mode'] || 'default';
+    var __mode__ = global['__zone_symbol__Zone_Mode'] || 'lazy';
     var performance = global['performance'];
     function mark(name) {
         performance && performance['mark'] && performance['mark'](name);
