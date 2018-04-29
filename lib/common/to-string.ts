@@ -5,13 +5,13 @@
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
-import {zoneSymbol} from './utils';
+import { zoneSymbol } from './utils';
 
 // override Function.prototype.toString to make zone.js patched function
 // look like native function
 Zone.__load_patch('toString', (global: any) => {
   // patch Func.prototype.toString to let them look like native
-  const originalFunctionToString = Function.prototype.toString;
+  /*const originalFunctionToString = Function.prototype.toString;
 
   const ORIGINAL_DELEGATE_SYMBOL = zoneSymbol('OriginalDelegate');
   const PROMISE_SYMBOL = zoneSymbol('Promise');
@@ -53,5 +53,5 @@ Zone.__load_patch('toString', (global: any) => {
       return PROMISE_OBJECT_TO_STRING;
     }
     return originalObjectToString.apply(this, arguments);
-  };
+  };*/
 });

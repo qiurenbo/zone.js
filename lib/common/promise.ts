@@ -494,6 +494,7 @@ Zone.__load_patch('ZoneAwarePromise', (global: any, Zone: ZoneType, api: _ZonePr
       });
       return wrapped.then(onResolve, onReject);
     };
+    Ctor.prototype['__zone_symbol__patchedThen'] = Ctor.prototype.then;
     (Ctor as any)[symbolThenPatched] = true;
   }
 
@@ -524,11 +525,12 @@ Zone.__load_patch('ZoneAwarePromise', (global: any, Zone: ZoneType, api: _ZonePr
   (Promise as any)[Zone.__symbol__('uncaughtPromiseErrors')] = _uncaughtPromiseErrors;
   return {
     unPatchFn: () => {
-      global['Promise'] = NativePromise;
-      global['Promise'].prototype.then = NativePromise.prototype[symbolThen];
+      global['__zone_symbol__ZoneAwarePromise'] = NativePromise;
+      NativePromise.prototype.then = NativePromise.prototype[symbolThen];
     },
     rePatchFn: () => {
-      global['Promise'] = ZoneAwarePromise;
+      global['__zone_symbol__ZoneAwarePromise'] = ZoneAwarePromise;
+      NativePromise.prototype.then = NativePromise.prototype['__zone_symbol__patchedThen'];
     }
   };
 });

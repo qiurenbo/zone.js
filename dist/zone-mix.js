@@ -719,16 +719,6 @@ var Zone$1 = (function (global) {
     return (global['Zone'] = Zone);
 })((typeof window !== 'undefined' && window) || (typeof self !== 'undefined' && self) || global);
 
-var __values = (undefined && undefined.__values) || function (o) {
-    var m = typeof Symbol === "function" && o[Symbol.iterator], i = 0;
-    if (m) return m.call(o);
-    return {
-        next: function () {
-            if (o && i >= o.length) o = void 0;
-            return { value: o && o[i++], done: !o };
-        }
-    };
-};
 Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
     var ObjectGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
     var ObjectDefineProperty = Object.defineProperty;
@@ -1015,24 +1005,14 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
             function onReject(error) {
                 promise && (promise = null || reject(error));
             }
-            try {
-                for (var values_1 = __values(values), values_1_1 = values_1.next(); !values_1_1.done; values_1_1 = values_1.next()) {
-                    var value = values_1_1.value;
-                    if (!isThenable(value)) {
-                        value = this.resolve(value);
-                    }
-                    value.then(onResolve, onReject);
+            for (var _i = 0, values_1 = values; _i < values_1.length; _i++) {
+                var value = values_1[_i];
+                if (!isThenable(value)) {
+                    value = this.resolve(value);
                 }
-            }
-            catch (e_1_1) { e_1 = { error: e_1_1 }; }
-            finally {
-                try {
-                    if (values_1_1 && !values_1_1.done && (_a = values_1.return)) _a.call(values_1);
-                }
-                finally { if (e_1) throw e_1.error; }
+                value.then(onResolve, onReject);
             }
             return promise;
-            var e_1, _a;
         };
         ZoneAwarePromise.all = function (values) {
             var resolve;
@@ -1043,33 +1023,23 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
             });
             var count = 0;
             var resolvedValues = [];
-            try {
-                for (var values_2 = __values(values), values_2_1 = values_2.next(); !values_2_1.done; values_2_1 = values_2.next()) {
-                    var value = values_2_1.value;
-                    if (!isThenable(value)) {
-                        value = this.resolve(value);
+            for (var _i = 0, values_2 = values; _i < values_2.length; _i++) {
+                var value = values_2[_i];
+                if (!isThenable(value)) {
+                    value = this.resolve(value);
+                }
+                value.then((function (index) { return function (value) {
+                    resolvedValues[index] = value;
+                    count--;
+                    if (!count) {
+                        resolve(resolvedValues);
                     }
-                    value.then((function (index) { return function (value) {
-                        resolvedValues[index] = value;
-                        count--;
-                        if (!count) {
-                            resolve(resolvedValues);
-                        }
-                    }; })(count), reject);
-                    count++;
-                }
-            }
-            catch (e_2_1) { e_2 = { error: e_2_1 }; }
-            finally {
-                try {
-                    if (values_2_1 && !values_2_1.done && (_a = values_2.return)) _a.call(values_2);
-                }
-                finally { if (e_2) throw e_2.error; }
+                }; })(count), reject);
+                count++;
             }
             if (!count)
                 resolve(resolvedValues);
             return promise;
-            var e_2, _a;
         };
         ZoneAwarePromise.prototype.then = function (onFulfilled, onRejected) {
             var chainPromise = new this
@@ -1163,6 +1133,7 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
             });
             return wrapped.then(onResolve, onReject);
         };
+        Ctor.prototype['__zone_symbol__patchedThen'] = Ctor.prototype.then;
         Ctor[symbolThenPatched] = true;
     }
     function zoneify(fn) {
@@ -1189,13 +1160,63 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
     Promise[Zone.__symbol__('uncaughtPromiseErrors')] = _uncaughtPromiseErrors;
     return {
         unPatchFn: function () {
-            global['Promise'] = NativePromise;
-            global['Promise'].prototype.then = NativePromise.prototype[symbolThen];
+            global['__zone_symbol__ZoneAwarePromise'] = NativePromise;
+            NativePromise.prototype.then = NativePromise.prototype[symbolThen];
         },
         rePatchFn: function () {
-            global['Promise'] = ZoneAwarePromise;
+            global['__zone_symbol__ZoneAwarePromise'] = ZoneAwarePromise;
+            NativePromise.prototype.then = NativePromise.prototype['__zone_symbol__patchedThen'];
         }
     };
+});
+
+// override Function.prototype.toString to make zone.js patched function
+// look like native function
+Zone.__load_patch('toString', function (global) {
+    // patch Func.prototype.toString to let them look like native
+    /*const originalFunctionToString = Function.prototype.toString;
+  
+    const ORIGINAL_DELEGATE_SYMBOL = zoneSymbol('OriginalDelegate');
+    const PROMISE_SYMBOL = zoneSymbol('Promise');
+    const ERROR_SYMBOL = zoneSymbol('Error');
+    const newFunctionToString = function toString() {
+      if (typeof this === 'function') {
+        const originalDelegate = this[ORIGINAL_DELEGATE_SYMBOL];
+        if (originalDelegate) {
+          if (typeof originalDelegate === 'function') {
+            return originalFunctionToString.apply(this[ORIGINAL_DELEGATE_SYMBOL], arguments);
+          } else {
+            return Object.prototype.toString.call(originalDelegate);
+          }
+        }
+        if (this === Promise) {
+          const nativePromise = global[PROMISE_SYMBOL];
+          if (nativePromise) {
+            return originalFunctionToString.apply(nativePromise, arguments);
+          }
+        }
+        if (this === Error) {
+          const nativeError = global[ERROR_SYMBOL];
+          if (nativeError) {
+            return originalFunctionToString.apply(nativeError, arguments);
+          }
+        }
+      }
+      return originalFunctionToString.apply(this, arguments);
+    };
+    (newFunctionToString as any)[ORIGINAL_DELEGATE_SYMBOL] = originalFunctionToString;
+    Function.prototype.toString = newFunctionToString;
+  
+  
+    // patch Object.prototype.toString to let them look like native
+    const originalObjectToString = Object.prototype.toString;
+    const PROMISE_OBJECT_TO_STRING = '[object Promise]';
+    Object.prototype.toString = function() {
+      if (this instanceof Promise) {
+        return PROMISE_OBJECT_TO_STRING;
+      }
+      return originalObjectToString.apply(this, arguments);
+    };*/
 });
 
 /**
@@ -1614,60 +1635,6 @@ function generateUnPatchAndRePatch(patches) {
         }
     };
 }
-
-/**
- * @license
- * Copyright Google Inc. All Rights Reserved.
- *
- * Use of this source code is governed by an MIT-style license that can be
- * found in the LICENSE file at https://angular.io/license
- */
-// override Function.prototype.toString to make zone.js patched function
-// look like native function
-Zone.__load_patch('toString', function (global) {
-    // patch Func.prototype.toString to let them look like native
-    var originalFunctionToString = Function.prototype.toString;
-    var ORIGINAL_DELEGATE_SYMBOL = zoneSymbol('OriginalDelegate');
-    var PROMISE_SYMBOL = zoneSymbol('Promise');
-    var ERROR_SYMBOL = zoneSymbol('Error');
-    var newFunctionToString = function toString() {
-        if (typeof this === 'function') {
-            var originalDelegate = this[ORIGINAL_DELEGATE_SYMBOL];
-            if (originalDelegate) {
-                if (typeof originalDelegate === 'function') {
-                    return originalFunctionToString.apply(this[ORIGINAL_DELEGATE_SYMBOL], arguments);
-                }
-                else {
-                    return Object.prototype.toString.call(originalDelegate);
-                }
-            }
-            if (this === Promise) {
-                var nativePromise = global[PROMISE_SYMBOL];
-                if (nativePromise) {
-                    return originalFunctionToString.apply(nativePromise, arguments);
-                }
-            }
-            if (this === Error) {
-                var nativeError = global[ERROR_SYMBOL];
-                if (nativeError) {
-                    return originalFunctionToString.apply(nativeError, arguments);
-                }
-            }
-        }
-        return originalFunctionToString.apply(this, arguments);
-    };
-    newFunctionToString[ORIGINAL_DELEGATE_SYMBOL] = originalFunctionToString;
-    Function.prototype.toString = newFunctionToString;
-    // patch Object.prototype.toString to let them look like native
-    var originalObjectToString = Object.prototype.toString;
-    var PROMISE_OBJECT_TO_STRING = '[object Promise]';
-    Object.prototype.toString = function () {
-        if (this instanceof Promise) {
-            return PROMISE_OBJECT_TO_STRING;
-        }
-        return originalObjectToString.apply(this, arguments);
-    };
-});
 
 /**
  * @license
