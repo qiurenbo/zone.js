@@ -719,7 +719,7 @@ type AmbientZoneDelegate = ZoneDelegate;
 
 const Zone: ZoneType = (function(global: any) {
   const FUNCTION = 'function';
-  const __mode__: _Zone_Mode = global['__zone_symbol__Zone_Mode'] || 'default';
+  const __mode__: _Zone_Mode = global['__zone_symbol__Zone_Mode'] || 'lazy';
 
   const performance: { mark(name: string): void; measure(name: string, label: string): void } =
     global['performance'];
@@ -738,7 +738,7 @@ const Zone: ZoneType = (function(global: any) {
     static __symbol__: (name: string) => string = __symbol__;
 
     static assertZonePatched() {
-      if (global['Promise'] !== patches['ZoneAwarePromise']) {
+      /*if (global['Promise'] !== patches['ZoneAwarePromise']) {
         throw new Error(
           'Zone.js has detected that ZoneAwarePromise `(window|global).Promise` ' +
             'has been overwritten.\n' +
@@ -746,7 +746,7 @@ const Zone: ZoneType = (function(global: any) {
             'after Zone.js (Polyfilling Promise api is not necessary when zone.js is loaded. ' +
             'If you must load one, do so before loading zone.js.)'
         );
-      }
+      }*/
     }
 
     static get root(): AmbientZone {

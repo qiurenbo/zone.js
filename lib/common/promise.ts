@@ -522,4 +522,13 @@ Zone.__load_patch('ZoneAwarePromise', (global: any, Zone: ZoneType, api: _ZonePr
 
   // This is not part of public API, but it is useful for tests, so we expose it.
   (Promise as any)[Zone.__symbol__('uncaughtPromiseErrors')] = _uncaughtPromiseErrors;
+  return {
+    unPatchFn: () => {
+      global['Promise'] = NativePromise;
+      global['Promise'].prototype.then = NativePromise.prototype[symbolThen];
+    },
+    rePatchFn: () => {
+      global['Promise'] = ZoneAwarePromise;
+    }
+  };
 });
