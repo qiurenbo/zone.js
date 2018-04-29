@@ -41,13 +41,15 @@ var Zone$1 = (function (global) {
             this._zoneDelegate = new ZoneDelegate(this, this._parent && this._parent._zoneDelegate, zoneSpec);
         }
         Zone.assertZonePatched = function () {
-            if (global['Promise'] !== patches['ZoneAwarePromise']) {
-                throw new Error('Zone.js has detected that ZoneAwarePromise `(window|global).Promise` ' +
-                    'has been overwritten.\n' +
-                    'Most likely cause is that a Promise polyfill has been loaded ' +
-                    'after Zone.js (Polyfilling Promise api is not necessary when zone.js is loaded. ' +
-                    'If you must load one, do so before loading zone.js.)');
-            }
+            /*if (global['Promise'] !== patches['ZoneAwarePromise']) {
+              throw new Error(
+                'Zone.js has detected that ZoneAwarePromise `(window|global).Promise` ' +
+                  'has been overwritten.\n' +
+                  'Most likely cause is that a Promise polyfill has been loaded ' +
+                  'after Zone.js (Polyfilling Promise api is not necessary when zone.js is loaded. ' +
+                  'If you must load one, do so before loading zone.js.)'
+              );
+            }*/
         };
         Object.defineProperty(Zone, "root", {
             get: function () {
@@ -1185,6 +1187,15 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
     }
     // This is not part of public API, but it is useful for tests, so we expose it.
     Promise[Zone.__symbol__('uncaughtPromiseErrors')] = _uncaughtPromiseErrors;
+    return {
+        unPatchFn: function () {
+            global['Promise'] = NativePromise;
+            global['Promise'].prototype.then = NativePromise.prototype[symbolThen];
+        },
+        rePatchFn: function () {
+            global['Promise'] = ZoneAwarePromise;
+        }
+    };
 });
 
 /**
