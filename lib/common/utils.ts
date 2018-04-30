@@ -431,6 +431,7 @@ export function patchMicroTask(
 
 export function attachOriginToPatched(patched: Function, original: any) {
   (patched as any)[zoneSymbol('OriginalDelegate')] = original;
+  (original as any)[zoneSymbol('patchedDelegate')] = patched;
 }
 
 let isDetectedIEOrEdge = false;
@@ -458,7 +459,7 @@ export function generateUnPatchAndRePatch(patches: [{target: any, methods: strin
     unPatchFn: () => {
       patches.forEach(patch => {
         patch.methods.forEach(m => {
-          const originalDelegate = patch.target[zoneSymbol(m)];
+          const originalDelegate = (patch as any)[zoneSymbol('OriginalDelegate')];
           if (originalDelegate) {
             patch.target[m] = originalDelegate;
           }
@@ -469,9 +470,9 @@ export function generateUnPatchAndRePatch(patches: [{target: any, methods: strin
       patches.forEach(patch => {
         patch.methods.forEach(m => {
           const method = patch.target[m];
-          const originalDelegate = method && method[zoneSymbol(m)];
-          if (originalDelegate) {
-            patch.target[m] = originalDelegate;
+          const patched = (method as any)[zoneSymbol('patchedDelegate')];
+          if (patched) {
+            patch.target[m] = patched;
           }
         });
       });

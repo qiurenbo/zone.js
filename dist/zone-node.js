@@ -1502,6 +1502,7 @@ function patchMicroTask(obj, funcName, metaCreator) {
 }
 function attachOriginToPatched(patched, original) {
     patched[zoneSymbol('OriginalDelegate')] = original;
+    original[zoneSymbol('patchedDelegate')] = patched;
 }
 
 /**

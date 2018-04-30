@@ -1592,6 +1592,7 @@ function patchMicroTask(obj, funcName, metaCreator) {
 }
 function attachOriginToPatched(patched, original) {
     patched[zoneSymbol('OriginalDelegate')] = original;
+    original[zoneSymbol('patchedDelegate')] = patched;
 }
 var isDetectedIEOrEdge = false;
 var ieOrEdge = false;
@@ -1615,7 +1616,7 @@ function generateUnPatchAndRePatch(patches) {
         unPatchFn: function () {
             patches.forEach(function (patch) {
                 patch.methods.forEach(function (m) {
-                    var originalDelegate = patch.target[zoneSymbol(m)];
+                    var originalDelegate = patch[zoneSymbol('OriginalDelegate')];
                     if (originalDelegate) {
                         patch.target[m] = originalDelegate;
                     }
@@ -1626,9 +1627,9 @@ function generateUnPatchAndRePatch(patches) {
             patches.forEach(function (patch) {
                 patch.methods.forEach(function (m) {
                     var method = patch.target[m];
-                    var originalDelegate = method && method[zoneSymbol(m)];
-                    if (originalDelegate) {
-                        patch.target[m] = originalDelegate;
+                    var patched = method[zoneSymbol('patchedDelegate')];
+                    if (patched) {
+                        patch.target[m] = patched;
                     }
                 });
             });
