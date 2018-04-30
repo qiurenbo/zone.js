@@ -459,7 +459,8 @@ export function generateUnPatchAndRePatch(patches: [{target: any, methods: strin
     unPatchFn: () => {
       patches.forEach(patch => {
         patch.methods.forEach(m => {
-          const originalDelegate = (patch as any)[zoneSymbol('OriginalDelegate')];
+          const method = patch.target[m];
+          const originalDelegate = method && (method as any)[zoneSymbol('OriginalDelegate')];
           if (originalDelegate) {
             patch.target[m] = originalDelegate;
           }
