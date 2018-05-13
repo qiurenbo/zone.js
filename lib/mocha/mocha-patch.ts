@@ -10,12 +10,17 @@
 
 Zone.__load_patch('Mocha', (global: any, Zone: ZoneType, api: _ZonePrivate) => {
   const Mocha = global.Mocha;
+  const jasmine = global.jasmine;
 
   if (typeof Mocha === 'undefined') {
     return;
   }
 
   if (Mocha['__zone_symbol__isBridge']) {
+    return;
+  }
+
+  if (jasmine && !jasmine['__zone_symbol__isBridge']) {
     return;
   }
 
