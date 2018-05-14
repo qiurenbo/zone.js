@@ -399,6 +399,16 @@ var __spread = (undefined && undefined.__spread) || function () {
             }
             return elapsed;
         };
+        FakeAsyncTestZoneSpec.prototype.clearAllMacrotasks = function () {
+            while (this.pendingTimers.length > 0) {
+                var timerId = this.pendingTimers.shift();
+                this._clearTimeout(timerId);
+            }
+            while (this.pendingPeriodicTimers.length > 0) {
+                var intervalId = this.pendingPeriodicTimers.shift();
+                this._clearInterval(intervalId);
+            }
+        };
         FakeAsyncTestZoneSpec.prototype.onScheduleTask = function (delegate, current, target, task) {
             switch (task.type) {
                 case 'microTask':
@@ -549,25 +559,29 @@ Zone.__load_patch('fakeasync', function (global, Zone, api) {
         ProxyZoneSpec && ProxyZoneSpec.assertPresent().resetDelegate();
     }
     /**
-    * Wraps a function to be executed in the fakeAsync zone:
-    * - microtasks are manually executed by calling `flushMicrotasks()`,
-    * - timers are synchronous, `tick()` simulates the asynchronous passage of time.
-    *
-    * If there are any pending timers at the end of the function, an exception will be thrown.
-    *
-    * Can be used to wrap inject() calls.
-    *
-    * ## Example
-    *
-    * {@example core/testing/ts/fake_async.ts region='basic'}
-    *
-    * @param fn
-    * @returns The function wrapped to be executed in the fakeAsync zone
-    *
-    * @experimental
-    */
-    function fakeAsync(fn) {
+     * Wraps a function to be executed in the fakeAsync zone:
+     * - microtasks are manually executed by calling `flushMicrotasks()`,
+     * - timers are synchronous, `tick()` simulates the asynchronous passage of time.
+     *
+     * If there are any pending timers at the end of the function, an exception will be thrown.
+     *
+     * Can be used to wrap inject() calls.
+     *
+     * ## Example
+     *
+     * {@example core/testing/ts/fake_async.ts region='basic'}
+     *
+     * @param fn
+     * @returns The function wrapped to be executed in the fakeAsync zone
+     *
+     * @experimental
+     */
+    function fakeAsync(fn, options) {
+        if (options === void 0) { options = { checkNested: true, checkRemainingMacrotasks: true }; }
         // Not using an arrow function to preserve context passed from call site
+        if (global['__zone_symbol__fakeAsyncCheckRemaining'] === false) {
+            options.checkRemainingMacrotasks = false;
+        }
         return function () {
             var args = [];
             for (var _i = 0; _i < arguments.length; _i++) {
@@ -575,13 +589,21 @@ Zone.__load_patch('fakeasync', function (global, Zone, api) {
             }
             var proxyZoneSpec = ProxyZoneSpec.assertPresent();
             if (Zone.current.get('FakeAsyncTestZoneSpec')) {
-                throw new Error('fakeAsync() calls can not be nested');
+                if (options.checkNested) {
+                    throw new Error('fakeAsync() calls can not be nested');
+                }
+                // already in fakeAsyncZone
+                return fn.apply(this, args);
             }
             try {
                 // in case jasmine.clock init a fakeAsyncTestZoneSpec
                 if (!_fakeAsyncTestZoneSpec) {
                     if (proxyZoneSpec.getDelegate() instanceof FakeAsyncTestZoneSpec) {
-                        throw new Error('fakeAsync() calls can not be nested');
+                        if (options.checkNested) {
+                            throw new Error('fakeAsync() calls can not be nested');
+                        }
+                        // already in fakeAsyncZone
+                        return fn.apply(this, args);
                     }
                     _fakeAsyncTestZoneSpec = new FakeAsyncTestZoneSpec();
                 }
@@ -596,12 +618,16 @@ Zone.__load_patch('fakeasync', function (global, Zone, api) {
                 finally {
                     proxyZoneSpec.setDelegate(lastProxyZoneSpec);
                 }
-                if (_fakeAsyncTestZoneSpec.pendingPeriodicTimers.length > 0) {
-                    throw new Error(_fakeAsyncTestZoneSpec.pendingPeriodicTimers.length + " " +
-                        "periodic timer(s) still in the queue.");
-                }
-                if (_fakeAsyncTestZoneSpec.pendingTimers.length > 0) {
-                    throw new Error(_fakeAsyncTestZoneSpec.pendingTimers.length + " timer(s) still in the queue.");
+                // TODO: @JiaLiPassion, we don't need to report error here.
+                // need to confirm.
+                if (options.checkRemainingMacrotasks) {
+                    if (_fakeAsyncTestZoneSpec.pendingPeriodicTimers.length > 0) {
+                        throw new Error(_fakeAsyncTestZoneSpec.pendingPeriodicTimers.length + " " +
+                            "periodic timer(s) still in the queue.");
+                    }
+                    if (_fakeAsyncTestZoneSpec.pendingTimers.length > 0) {
+                        throw new Error(_fakeAsyncTestZoneSpec.pendingTimers.length + " timer(s) still in the queue.");
+                    }
                 }
                 return res;
             }
@@ -631,9 +657,9 @@ Zone.__load_patch('fakeasync', function (global, Zone, api) {
      *
      * @experimental
      */
-    function tick(millis) {
+    function tick(millis, doTick) {
         if (millis === void 0) { millis = 0; }
-        _getFakeAsyncZoneSpec().tick(millis);
+        _getFakeAsyncZoneSpec().tick(millis, doTick);
     }
     /**
      * Simulates the asynchronous passage of time for the timers in the fakeAsync zone by
@@ -645,8 +671,9 @@ Zone.__load_patch('fakeasync', function (global, Zone, api) {
      *
      * @experimental
      */
-    function flush(maxTurns) {
-        return _getFakeAsyncZoneSpec().flush(maxTurns);
+    function flush(maxTurns, isPeriodic) {
+        if (isPeriodic === void 0) { isPeriodic = false; }
+        return _getFakeAsyncZoneSpec().flush(maxTurns, isPeriodic);
     }
     /**
      * Discard all remaining periodic tasks.
@@ -666,8 +693,37 @@ Zone.__load_patch('fakeasync', function (global, Zone, api) {
     function flushMicrotasks() {
         _getFakeAsyncZoneSpec().flushMicrotasks();
     }
+    /**
+     * Clear all microtasks
+     *
+     * @experimental
+     */
+    function clearAllMacrotasks() {
+        _getFakeAsyncZoneSpec().clearAllMacrotasks();
+    }
+    /**
+     * flush all macroTasks and discard periodic tasks
+     *
+     * @experimental
+     */
+    function flushAndDiscardPeriodicTasks() {
+        var fakeAsyncSpec = _getFakeAsyncZoneSpec();
+        fakeAsyncSpec.flush(100, true);
+        discardPeriodicTasks();
+    }
     Zone[api.symbol('fakeAsyncTest')] =
-        { resetFakeAsyncZone: resetFakeAsyncZone, flushMicrotasks: flushMicrotasks, discardPeriodicTasks: discardPeriodicTasks, tick: tick, flush: flush, fakeAsync: fakeAsync };
+        { resetFakeAsyncZone: resetFakeAsyncZone, flushMicrotasks: flushMicrotasks, discardPeriodicTasks: discardPeriodicTasks, tick: tick, flush: flush, fakeAsync: fakeAsync, clearAllMacrotasks: clearAllMacrotasks };
+    /**
+     * expose those function to global
+     */
+    global['resetFakeAsyncZone'] = resetFakeAsyncZone;
+    global['flushMicrotasks'] = flushMicrotasks;
+    global['discardPeriodicTasks'] = discardPeriodicTasks;
+    global['tick'] = tick;
+    global['flush'] = flush;
+    global['fakeAsyncTest'] = fakeAsync;
+    global['clearAllMacrotasks'] = clearAllMacrotasks;
+    global['flushAndDiscardPeriodicTasks'] = flushAndDiscardPeriodicTasks;
 });
 
 })));

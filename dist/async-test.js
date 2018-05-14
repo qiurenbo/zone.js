@@ -151,7 +151,7 @@ Zone.__load_patch('asynctest', function (global, Zone, api) {
      * Wraps a test function in an asynchronous test zone. The test will automatically
      * complete when all asynchronous calls within this zone are done.
      */
-    Zone[api.symbol('asyncTest')] = function asyncTest(fn) {
+    global['asyncTest'] = Zone[api.symbol('asyncTest')] = function asyncTest(fn) {
         // If we're running using the Jasmine test framework, adapt to call the 'done'
         // function when asynchronous activity is finished.
         if (global.jasmine) {

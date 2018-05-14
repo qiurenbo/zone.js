@@ -18,66 +18,10 @@
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
-(function () {
-    var __extends = function (d, b) {
-        for (var p in b)
-            if (b.hasOwnProperty(p))
-                d[p] = b[p];
-        function __() {
-            this.constructor = d;
-        }
-        d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
-    };
-    var _global = typeof window !== 'undefined' && window || typeof self !== 'undefined' && self || global;
-    // Patch jasmine's describe/it/beforeEach/afterEach functions so test code always runs
-    // in a testZone (ProxyZone). (See: angular/zone.js#91 & angular/angular#10503)
-    if (!Zone)
-        throw new Error('Missing: zone.js');
-    if (typeof jasmine == 'undefined')
-        throw new Error('Missing: jasmine.js');
-    if (jasmine['__zone_patch__'])
-        throw new Error("'jasmine' has already been patched with 'Zone'.");
-    jasmine['__zone_patch__'] = true;
-    var SyncTestZoneSpec = Zone['SyncTestZoneSpec'];
-    var ProxyZoneSpec = Zone['ProxyZoneSpec'];
-    if (!SyncTestZoneSpec)
-        throw new Error('Missing: SyncTestZoneSpec');
-    if (!ProxyZoneSpec)
-        throw new Error('Missing: ProxyZoneSpec');
-    var ambientZone = Zone.current;
-    // Create a synchronous-only zone in which to run `describe` blocks in order to raise an
-    // error if any asynchronous operations are attempted inside of a `describe` but outside of
-    // a `beforeEach` or `it`.
-    var syncZone = ambientZone.fork(new SyncTestZoneSpec('jasmine.describe'));
+// need to patch jasmine.clock().mockDate and jasmine.clock().tick() so
+// they can work properly in FakeAsyncTest
+function patchJasmineClock(jasmine, global) {
     var symbol = Zone.__symbol__;
-    // whether patch jasmine clock when in fakeAsync
-    var enableClockPatch = _global[symbol('fakeAsyncPatchLock')] === true;
-    // Monkey patch all of the jasmine DSL so that each function runs in appropriate zone.
-    var jasmineEnv = jasmine.getEnv();
-    ['describe', 'xdescribe', 'fdescribe'].forEach(function (methodName) {
-        var originalJasmineFn = jasmineEnv[methodName];
-        jasmineEnv[methodName] = function (description, specDefinitions) {
-            return originalJasmineFn.call(this, description, wrapDescribeInZone(specDefinitions));
-        };
-    });
-    ['it', 'xit', 'fit'].forEach(function (methodName) {
-        var originalJasmineFn = jasmineEnv[methodName];
-        jasmineEnv[symbol(methodName)] = originalJasmineFn;
-        jasmineEnv[methodName] = function (description, specDefinitions, timeout) {
-            arguments[1] = wrapTestInZone(specDefinitions);
-            return originalJasmineFn.apply(this, arguments);
-        };
-    });
-    ['beforeEach', 'afterEach'].forEach(function (methodName) {
-        var originalJasmineFn = jasmineEnv[methodName];
-        jasmineEnv[symbol(methodName)] = originalJasmineFn;
-        jasmineEnv[methodName] = function (specDefinitions, timeout) {
-            arguments[0] = wrapTestInZone(specDefinitions);
-            return originalJasmineFn.apply(this, arguments);
-        };
-    });
-    // need to patch jasmine.clock().mockDate and jasmine.clock().tick() so
-    // they can work properly in FakeAsyncTest
     var originalClockFn = (jasmine[symbol('clock')] = jasmine['clock']);
     jasmine['clock'] = function () {
         var clock = originalClockFn.apply(this, arguments);
@@ -102,42 +46,140 @@
                 return originalMockDate_1.apply(this, arguments);
             };
             // for auto go into fakeAsync feature, we need the flag to enable it
-            if (enableClockPatch) {
-                ['install', 'uninstall'].forEach(function (methodName) {
-                    var originalClockFn = (clock[symbol(methodName)] = clock[methodName]);
-                    clock[methodName] = function () {
-                        var FakeAsyncTestZoneSpec = Zone['FakeAsyncTestZoneSpec'];
-                        if (FakeAsyncTestZoneSpec) {
-                            jasmine[symbol('clockInstalled')] = 'install' === methodName;
-                            return;
-                        }
-                        return originalClockFn.apply(this, arguments);
-                    };
-                });
-            }
+            ['install', 'uninstall'].forEach(function (methodName) {
+                var originalClockFn = (clock[symbol(methodName)] = clock[methodName]);
+                clock[methodName] = function () {
+                    var enableClockPatch = global[symbol('fakeAsyncPatchLock')] === true;
+                    var FakeAsyncTestZoneSpec = Zone['FakeAsyncTestZoneSpec'];
+                    if (enableClockPatch && FakeAsyncTestZoneSpec) {
+                        jasmine[symbol('clockInstalled')] = 'install' === methodName;
+                        return;
+                    }
+                    return originalClockFn.apply(this, arguments);
+                };
+            });
         }
         return clock;
     };
+}
+
+/**
+ * @license
+ * Copyright Google Inc. All Rights Reserved.
+ *
+ * Use of this source code is governed by an MIT-style license that can be
+ * found in the LICENSE file at https://angular.io/license
+ */
+
+var symbol = Zone.__symbol__;
+function mappingMochaMethods(jasmine, global, context) {
+    if (context && !context.timeout) {
+        context.timeout = function (timeout) {
+            jasmine['__zone_symbol__DEFAULT_TIMEOUT_INTERVAL'] = jasmine.DEFAULT_TIMEOUT_INTERVAL;
+            jasmine.DEFAULT_TIMEOUT_INTERVAL = timeout;
+        };
+    }
+    if (context && !context.skip) {
+        context.skip = function () {
+            if (typeof global['pending'] === 'function') {
+                global['pending']();
+            }
+        };
+    }
+}
+
+/**
+ * @license
+ * Copyright Google Inc. All Rights Reserved.
+ *
+ * Use of this source code is governed by an MIT-style license that can be
+ * found in the LICENSE file at https://angular.io/license
+ */
+Zone.__load_patch('jasmine', function (global) {
+    var __extends = function (d, b) {
+        for (var p in b)
+            if (b.hasOwnProperty(p))
+                d[p] = b[p];
+        function __() {
+            this.constructor = d;
+        }
+        d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+    };
+    // Patch jasmine's describe/it/beforeEach/afterEach functions so test code always runs
+    // in a testZone (ProxyZone). (See: angular/zone.js#91 & angular/angular#10503)
+    if (!Zone)
+        throw new Error('Missing: zone.js');
+    if (typeof jasmine == 'undefined') {
+        // not using jasmine, just return;
+        return;
+    }
+    if (jasmine['__zone_symbol__isBridge']) {
+        // jasmine is a mock bridge
+        return;
+    }
+    if (jasmine['__zone_patch__'])
+        throw new Error("'jasmine' has already been patched with 'Zone'.");
+    jasmine['__zone_patch__'] = true;
+    var SyncTestZoneSpec = Zone['SyncTestZoneSpec'];
+    var ProxyZoneSpec = Zone['ProxyZoneSpec'];
+    if (!SyncTestZoneSpec)
+        throw new Error('Missing: SyncTestZoneSpec');
+    if (!ProxyZoneSpec)
+        throw new Error('Missing: ProxyZoneSpec');
+    var ambientZone = Zone.current;
+    // Create a synchronous-only zone in which to run `describe` blocks in order to raise an
+    // error if any asynchronous operations are attempted inside of a `describe` but outside of
+    // a `beforeEach` or `it`.
+    var syncZone = ambientZone.fork(new SyncTestZoneSpec('jasmine.describe'));
+    var symbol = Zone.__symbol__;
+    // Monkey patch all of the jasmine DSL so that each function runs in appropriate zone.
+    var jasmineEnv = jasmine.getEnv();
+    ['describe', 'xdescribe', 'fdescribe'].forEach(function (methodName) {
+        var originalJasmineFn = jasmineEnv[methodName];
+        jasmineEnv[methodName] = function (description, specDefinitions) {
+            return originalJasmineFn.call(this, description, wrapDescribeInZone(specDefinitions));
+        };
+    });
+    ['it', 'xit', 'fit'].forEach(function (methodName) {
+        var originalJasmineFn = jasmineEnv[methodName];
+        jasmineEnv[symbol(methodName)] = originalJasmineFn;
+        jasmineEnv[methodName] = function (description, specDefinitions, timeout) {
+            var wrappedSpecDef = wrapTestInZone(specDefinitions);
+            return originalJasmineFn.apply(this, typeof timeout === 'number' ? [description, wrappedSpecDef, timeout] :
+                [description, wrappedSpecDef]);
+        };
+    });
+    ['beforeAll', 'afterAll', 'beforeEach', 'afterEach'].forEach(function (methodName) {
+        var originalJasmineFn = jasmineEnv[methodName];
+        jasmineEnv[symbol(methodName)] = originalJasmineFn;
+        jasmineEnv[methodName] = function (specDefinitions, timeout) {
+            var wrappedSpecDef = wrapTestInZone(specDefinitions);
+            return originalJasmineFn.apply(this, typeof timeout === 'number' ? [wrappedSpecDef, timeout] : [wrappedSpecDef]);
+        };
+    });
+    patchJasmineClock(jasmine, global);
     /**
      * Gets a function wrapping the body of a Jasmine `describe` block to execute in a
      * synchronous-only zone.
      */
     function wrapDescribeInZone(describeBody) {
         return function () {
+            mappingMochaMethods(jasmine, global, this);
             return syncZone.run(describeBody, this, arguments);
         };
     }
     function runInTestZone(testBody, applyThis, queueRunner, done) {
-        var isClockInstalled = !!jasmine[symbol('clockInstalled')];
+        var isClockInstalled = jasmine[symbol('clockInstalled')] === true;
         var testProxyZoneSpec = queueRunner.testProxyZoneSpec;
         var testProxyZone = queueRunner.testProxyZone;
-        if (isClockInstalled && enableClockPatch) {
+        if (isClockInstalled) {
             // auto run a fakeAsync
             var fakeAsyncModule = Zone[Zone.__symbol__('fakeAsyncTest')];
             if (fakeAsyncModule && typeof fakeAsyncModule.fakeAsync === 'function') {
                 testBody = fakeAsyncModule.fakeAsync(testBody);
             }
         }
+        mappingMochaMethods(jasmine, global, applyThis);
         if (done) {
             return testProxyZone.run(testBody, applyThis, [done]);
         }
@@ -169,15 +211,19 @@
                 // All functions are done, clear the test zone.
                 _this.testProxyZone = null;
                 _this.testProxyZoneSpec = null;
+                var originalTimeout = jasmine['__zone_symbol__DEFAULT_TIMEOUT_INTERVAL'];
+                if (typeof originalTimeout === 'number') {
+                    jasmine.DEFAULT_TIMEOUT_INTERVAL = originalTimeout;
+                }
                 ambientZone.scheduleMicroTask('jasmine.onComplete', fn);
             }; })(attrs.onComplete);
-            var nativeSetTimeout = _global['__zone_symbol__setTimeout'];
-            var nativeClearTimeout = _global['__zone_symbol__clearTimeout'];
+            var nativeSetTimeout = global['__zone_symbol__setTimeout'];
+            var nativeClearTimeout = global['__zone_symbol__clearTimeout'];
             if (nativeSetTimeout) {
                 // should run setTimeout inside jasmine outside of zone
                 attrs.timeout = {
-                    setTimeout: nativeSetTimeout ? nativeSetTimeout : _global.setTimeout,
-                    clearTimeout: nativeClearTimeout ? nativeClearTimeout : _global.clearTimeout
+                    setTimeout: nativeSetTimeout ? nativeSetTimeout : global.setTimeout,
+                    clearTimeout: nativeClearTimeout ? nativeClearTimeout : global.clearTimeout
                 };
             }
             // create a userContext to hold the queueRunner itself
@@ -252,6 +298,17 @@
         };
         return ZoneQueueRunner;
     })(QueueRunner);
-})();
+});
+
+/**
+ * @license
+ * Copyright Google Inc. All Rights Reserved.
+ *
+ * Use of this source code is governed by an MIT-style license that can be
+ * found in the LICENSE file at https://angular.io/license
+ */
+
+// TODO: @JiaLiPassion, add mocha/jest bridge for jasmine later
+// import './mocha-bridge/mocha-bridge';
 
 })));
