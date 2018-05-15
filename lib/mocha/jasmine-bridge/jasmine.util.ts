@@ -179,7 +179,22 @@ export function toMatch(actual: any, expected: any) {
 const Mocha: any = typeof window === 'undefined' ? (global as any).Mocha : (window as any).Mocha;
 
 export function formatObject(obj: any) {
-  return Object.prototype.toString.call(obj);
+  let str = '';
+  if (Array.isArray(obj)) {
+    str += '[';
+    for (let i = 0; i < obj.length; i++) {
+      str += formatObject(obj[i]);
+      if (i !== obj.length - 1) {
+        str += ',';
+      }
+    }
+    str += ']';
+  } else if (typeof obj === 'object') {
+    str += JSON.stringify(obj);
+  } else {
+    str += obj.toString();
+  }
+  return str;
 }
 
 export function buildFailureMessage(

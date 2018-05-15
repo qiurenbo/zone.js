@@ -1740,14 +1740,6 @@ Zone.__load_patch('Mocha', function (global, Zone, api) {
     var testZoneSpec = null;
     var suiteZoneSpec = new ProxyZoneSpec();
     var suiteZone = rootZone.fork(suiteZoneSpec);
-    var mochaOriginal = {
-        after: Mocha.after,
-        afterEach: Mocha.afterEach,
-        before: Mocha.before,
-        beforeEach: Mocha.beforeEach,
-        describe: Mocha.describe,
-        it: Mocha.it
-    };
     function modifyArguments(args, syncTest, asyncTest) {
         var _loop_1 = function (i) {
             var arg = args[i];
@@ -1866,37 +1858,76 @@ Zone.__load_patch('Mocha', function (global, Zone, api) {
         return { suite: Mocha.__zone_symbol__suite, test: Mocha.__zone_symbol__test };
     };
     Mocha.clearSpies = function () { };
-    global.describe = global.suite = Mocha.describe = function () {
-        return mochaOriginal.describe.apply(this, wrapDescribeInZone(arguments));
-    };
-    global.xdescribe = global.suite.skip = Mocha.describe.skip = function () {
-        return mochaOriginal.describe.skip.apply(this, wrapDescribeInZone(arguments));
-    };
-    global.describe.only = global.suite.only = Mocha.describe.only = function () {
-        return mochaOriginal.describe.only.apply(this, wrapDescribeInZone(arguments));
-    };
-    global.it = global.specify = global.test = Mocha.it = function () {
-        return mochaOriginal.it.apply(this, wrapTestInZone(arguments));
-    };
-    global.xit = global.xspecify = Mocha.it.skip = function () {
-        return mochaOriginal.it.skip.apply(this, wrapTestInZone(arguments));
-    };
-    global.it.only = global.test.only = Mocha.it.only = function () {
-        return mochaOriginal.it.only.apply(this, wrapTestInZone(arguments));
-    };
-    global.after = global.suiteTeardown = Mocha.after = function () {
-        return mochaOriginal.after.apply(this, wrapSuiteInZone(arguments));
-    };
-    global.afterEach = global.teardown = Mocha.afterEach = function () {
-        return mochaOriginal.afterEach.apply(this, wrapTestInZone(arguments));
-    };
-    global.before = global.suiteSetup = Mocha.before = function () {
-        return mochaOriginal.before.apply(this, wrapSuiteInZone(arguments));
-    };
-    global.beforeEach = global.setup = Mocha.beforeEach = function () {
-        return mochaOriginal.beforeEach.apply(this, wrapTestInZone(arguments));
-    };
-    (function (originalRunTest, originalRun) {
+    function patchGlobal() {
+        var mochaOriginal = {
+            after: Mocha[api.symbol('after')] || Mocha.after,
+            afterEach: Mocha[api.symbol('afterEach')] || Mocha.afterEach,
+            before: Mocha[api.symbol('before')] || Mocha.before,
+            beforeEach: Mocha[api.symbol('beforeEach')] || Mocha.beforeEach,
+            describe: Mocha[api.symbol('describe')] || Mocha.describe,
+            it: Mocha[api.symbol('it')] || Mocha.it
+        };
+        /*if (!Mocha[api.symbol('describe')]) {
+          Mocha[api.symbol('describe')] = Mocha['describe'];
+        }
+        if (!Mocha[api.symbol('after')]) {
+          Mocha[api.symbol('after')] = Mocha['after'];
+        }
+        if (!Mocha[api.symbol('afterEach')]) {
+          Mocha[api.symbol('afterEach')] = Mocha['afterEach'];
+        }
+        if (!Mocha[api.symbol('before')]) {
+          Mocha[api.symbol('before')] = Mocha['before'];
+        }
+        if (!Mocha[api.symbol('beforeEach')]) {
+          Mocha[api.symbol('beforeEach')] = Mocha['beforeEach'];
+        }
+        if (!Mocha[api.symbol('it')]) {
+          Mocha[api.symbol('it')] = Mocha['it'];
+        }*/
+        global.describe = global.suite = Mocha.describe = function () {
+            return mochaOriginal.describe.apply(this, wrapDescribeInZone(arguments));
+        };
+        global.xdescribe = global.suite.skip = Mocha.describe.skip = function () {
+            return mochaOriginal.describe.skip.apply(this, wrapDescribeInZone(arguments));
+        };
+        global.describe.only = global.suite.only = Mocha.describe.only = function () {
+            return mochaOriginal.describe.only.apply(this, wrapDescribeInZone(arguments));
+        };
+        global.it = global.specify = global.test = Mocha.it = function () {
+            return mochaOriginal.it.apply(this, wrapTestInZone(arguments));
+        };
+        global.xit = global.xspecify = Mocha.it.skip = function () {
+            return mochaOriginal.it.skip.apply(this, wrapTestInZone(arguments));
+        };
+        global.it.only = global.test.only = Mocha.it.only = function () {
+            return mochaOriginal.it.only.apply(this, wrapTestInZone(arguments));
+        };
+        global.after = global.suiteTeardown = Mocha.after = function () {
+            return mochaOriginal.after.apply(this, wrapSuiteInZone(arguments));
+        };
+        global.afterEach = global.teardown = Mocha.afterEach = function () {
+            return mochaOriginal.afterEach.apply(this, wrapTestInZone(arguments));
+        };
+        global.before = global.suiteSetup = Mocha.before = function () {
+            return mochaOriginal.before.apply(this, wrapSuiteInZone(arguments));
+        };
+        global.beforeEach = global.setup = Mocha.beforeEach = function () {
+            return mochaOriginal.beforeEach.apply(this, wrapTestInZone(arguments));
+        };
+    }
+    if (typeof Mocha.describe === 'function') {
+        patchGlobal();
+    }
+    (function (originalRunTest, originalRun, originalMochaRun) {
+        Mocha.prototype.run = function () {
+            if (this.suite) {
+                this.suite.on('pre-require', function () {
+                    patchGlobal();
+                });
+            }
+            return originalMochaRun.apply(this, arguments);
+        };
         Mocha.Runner.prototype.runTest = function (fn) {
             var _this = this;
             Zone.current.scheduleMicroTask('mocha.forceTask', function () {
@@ -1916,7 +1947,7 @@ Zone.__load_patch('Mocha', function (global, Zone, api) {
             });
             return originalRun.call(this, fn);
         };
-    })(Mocha.Runner.prototype.runTest, Mocha.Runner.prototype.run);
+    })(Mocha.Runner.prototype.runTest, Mocha.Runner.prototype.run, Mocha.prototype.run);
 });
 
 /**
@@ -2155,19 +2186,31 @@ function toMatch(actual, expected) {
 }
 var Mocha = typeof window === 'undefined' ? global.Mocha : window.Mocha;
 function formatObject(obj) {
-    var stringify = Mocha.utils && Mocha.utils.stringify;
-    return stringify(obj);
-}
-function buildFailureMessage(matcherName, isNot, actual) {
-    var expected = [];
-    for (var _i = 3; _i < arguments.length; _i++) {
-        expected[_i - 3] = arguments[_i];
+    var str = '';
+    if (Array.isArray(obj)) {
+        str += '[';
+        for (var i = 0; i < obj.length; i++) {
+            str += formatObject(obj[i]);
+            if (i !== obj.length - 1) {
+                str += ',';
+            }
+        }
+        str += ']';
     }
+    else if (typeof obj === 'object') {
+        str += JSON.stringify(obj);
+    }
+    else {
+        str += obj.toString();
+    }
+    return str;
+}
+function buildFailureMessage(matcherName, isNot, actual, expected) {
     var englishyPredicate = matcherName.replace(/[A-Z]/g, function (s) {
         return ' ' + s.toLowerCase();
     });
     var message = 'Expected ' + formatObject(actual) + (isNot ? ' not ' : ' ') + englishyPredicate;
-    if (expected.length > 0) {
+    if (expected && expected.length > 0) {
         for (var i = 0; i < expected.length; i++) {
             if (i > 0) {
                 message += ',';
@@ -2245,7 +2288,7 @@ function buildCustomMatchers(jasmine, actual) {
                     for (var _i = 0; _i < arguments.length; _i++) {
                         expects[_i] = arguments[_i];
                     }
-                    var args = expects ? __spread$1(expects) : [];
+                    var args = expects ? expects.slice() : [];
                     args.unshift(actual);
                     var result = customMatcher_1.compare.apply(null, args);
                     if (!result.pass) {
