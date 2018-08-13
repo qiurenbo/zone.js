@@ -549,23 +549,23 @@ Zone.__load_patch('fakeasync', function (global, Zone, api) {
         ProxyZoneSpec && ProxyZoneSpec.assertPresent().resetDelegate();
     }
     /**
-    * Wraps a function to be executed in the fakeAsync zone:
-    * - microtasks are manually executed by calling `flushMicrotasks()`,
-    * - timers are synchronous, `tick()` simulates the asynchronous passage of time.
-    *
-    * If there are any pending timers at the end of the function, an exception will be thrown.
-    *
-    * Can be used to wrap inject() calls.
-    *
-    * ## Example
-    *
-    * {@example core/testing/ts/fake_async.ts region='basic'}
-    *
-    * @param fn
-    * @returns The function wrapped to be executed in the fakeAsync zone
-    *
-    * @experimental
-    */
+     * Wraps a function to be executed in the fakeAsync zone:
+     * - microtasks are manually executed by calling `flushMicrotasks()`,
+     * - timers are synchronous, `tick()` simulates the asynchronous passage of time.
+     *
+     * If there are any pending timers at the end of the function, an exception will be thrown.
+     *
+     * Can be used to wrap inject() calls.
+     *
+     * ## Example
+     *
+     * {@example core/testing/ts/fake_async.ts region='basic'}
+     *
+     * @param fn
+     * @returns The function wrapped to be executed in the fakeAsync zone
+     *
+     * @experimental
+     */
     function fakeAsync(fn) {
         // Not using an arrow function to preserve context passed from call site
         return function () {

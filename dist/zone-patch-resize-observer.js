@@ -109,7 +109,9 @@ Zone.__load_patch('ResizeObserver', function (global, Zone, api) {
     api.patchMethod(ResizeObserver.prototype, 'disconnect', function (delegate) { return function (self, args) {
         var targets = self[resizeObserverSymbol];
         if (targets) {
-            targets.forEach(function (target) { target[resizeObserverSymbol] = undefined; });
+            targets.forEach(function (target) {
+                target[resizeObserverSymbol] = undefined;
+            });
             self[resizeObserverSymbol] = undefined;
         }
         return delegate.apply(self, args);
