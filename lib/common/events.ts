@@ -10,7 +10,7 @@
  * @suppress {missingRequire}
  */
 
-import {ADD_EVENT_LISTENER_STR, attachOriginToPatched, FALSE_STR, isIEOrEdge, ObjectGetPrototypeOf, REMOVE_EVENT_LISTENER_STR, TRUE_STR, ZONE_SYMBOL_PREFIX, zoneSymbol} from './utils';
+import {ADD_EVENT_LISTENER_STR, attachOriginToPatched, FALSE_STR, isIE, isIEOrEdge, ObjectGetPrototypeOf, REMOVE_EVENT_LISTENER_STR, TRUE_STR, ZONE_SYMBOL_PREFIX, zoneSymbol} from './utils';
 
 /** @internal **/
 interface EventTaskData extends TaskData {
@@ -19,15 +19,15 @@ interface EventTaskData extends TaskData {
 }
 
 const pointerEventsMap: {[key: string]: string} = {
-  'pointercancel': 'MSPointerCancel',
-  'pointerdown': 'MSPointerDown',
-  'pointerenter': 'MSPointerEnter',
-  'pointerhover': 'MSPointerHover',
-  'pointerleave': 'MSPointerLeave',
-  'pointermove': 'MSPointerMove',
-  'pointerout': 'MSPointerOut',
-  'pointerover': 'MSPointerOver',
-  'pointerup': 'MSPointerUp'
+  'MSPointerCancel': 'pointercancel',
+  'MSPointerDown': 'pointerdown',
+  'MSPointerEnter': 'pointerenter',
+  'MSPointerHover': 'pointerhover',
+  'MSPointerLeave': 'pointerleave',
+  'MSPointerMove': 'pointermove',
+  'MSPointerOut': 'pointerout',
+  'MSPointerOver': 'pointerover',
+  'MSPointerUp': 'pointerup'
 };
 
 let passiveSupported = false;
@@ -99,6 +99,16 @@ export function patchEventTarget(
   const PREPEND_EVENT_LISTENER = 'prependListener';
   const PREPEND_EVENT_LISTENER_SOURCE = '.' + PREPEND_EVENT_LISTENER + ':';
 
+  Object.keys(pointerEventsMap).forEach(msEventName => {
+    const eventName = pointerEventsMap[msEventName];
+    zoneSymbolEventNames[eventName] = {};
+    zoneSymbolEventNames[eventName][FALSE_STR] = ZONE_SYMBOL_PREFIX + eventName + FALSE_STR;
+    zoneSymbolEventNames[eventName][TRUE_STR] = ZONE_SYMBOL_PREFIX + eventName + TRUE_STR;
+    zoneSymbolEventNames[msEventName] = {};
+    zoneSymbolEventNames[msEventName][FALSE_STR] = ZONE_SYMBOL_PREFIX + msEventName + FALSE_STR;
+    zoneSymbolEventNames[msEventName][TRUE_STR] = ZONE_SYMBOL_PREFIX + msEventName + TRUE_STR;
+  });
+
   const invokeTask = function(task: any, target: any, event: Event) {
     // for better performance, check isRemoved which is set
     // by removeEventListener
@@ -135,10 +145,13 @@ export function patchEventTarget(
     // || global is needed https://github.com/angular/zone.js/issues/190
     const target: any = this || event.target || _global;
     let tasks = target[zoneSymbolEventNames[event.type][FALSE_STR]];
-    if (!tasks && isIEOrEdge) {
+    if (isIEOrEdge) {
       const pointerMappedEvent = pointerEventsMap[event.type];
-      tasks =
-          pointerMappedEvent ? target[zoneSymbolEventNames[pointerMappedEvent]][FALSE_STR] : tasks;
+      const msTasks =
+          pointerMappedEvent && target[zoneSymbolEventNames[pointerMappedEvent]][FALSE_STR];
+      if (msTasks) {
+        tasks = tasks.concat(msTasks);
+      }
     }
     if (tasks) {
       // invoke all tasks which attached to current target with given event.type and capture = false
@@ -172,10 +185,13 @@ export function patchEventTarget(
     // || global is needed https://github.com/angular/zone.js/issues/190
     const target: any = this || event.target || _global;
     let tasks = target[zoneSymbolEventNames[event.type][TRUE_STR]];
-    if (!tasks && isIEOrEdge) {
+    if (isIEOrEdge) {
       const pointerMappedEvent = pointerEventsMap[event.type];
-      tasks =
-          pointerMappedEvent ? target[zoneSymbolEventNames[pointerMappedEvent]][TRUE_STR] : tasks;
+      const msTasks =
+          pointerMappedEvent && target[zoneSymbolEventNames[pointerMappedEvent]][FALSE_STR];
+      if (msTasks) {
+        tasks = tasks.concat(msTasks);
+      }
     }
     if (tasks) {
       // invoke all tasks which attached to current target with given event.type and capture = false
@@ -372,7 +388,11 @@ export function patchEventTarget(
           return;
         }
 
-        const eventName = arguments[0];
+        let eventName = arguments[0];
+        if (isIEOrEdge) {
+          const msEventName = pointerEventsMap[eventName];
+          eventName = msEventName ? msEventName : eventName;
+        }
         const options = arguments[2];
 
         if (blackListedEvents) {
@@ -415,6 +435,13 @@ export function patchEventTarget(
         }
         let existingTasks = target[symbolEventName];
         let isExisting = false;
+        if (isIEOrEdge && !existingTasks) {
+          const msEventName = pointerEventsMap[eventName];
+          if (msEventName) {
+            existingTasks =
+                target[zoneSymbolEventNames[msEventName][capture ? TRUE_STR : FALSE_STR]];
+          }
+        }
         if (existingTasks) {
           // already have task registered
           isExisting = true;
@@ -449,7 +476,8 @@ export function patchEventTarget(
         }
         taskData.target = target;
         taskData.capture = capture;
-        taskData.eventName = eventName;
+        // in pointer event, we need to use original event name here.
+        taskData.eventName = arguments[0];
         taskData.isExisting = isExisting;
 
         const data = useGlobalCallback ? OPTIMIZED_ZONE_EVENT_TASK_DATA : undefined;
@@ -511,7 +539,11 @@ export function patchEventTarget(
 
     proto[REMOVE_EVENT_LISTENER] = function() {
       const target = this || _global;
-      const eventName = arguments[0];
+      let eventName = arguments[0];
+      if (isIEOrEdge) {
+        const msEventName = pointerEventsMap[eventName];
+        eventName = msEventName ? msEventName : eventName;
+      }
       const options = arguments[2];
 
       let capture;
@@ -553,6 +585,9 @@ export function patchEventTarget(
               // remove globalZoneAwareCallback and remove the task cache from target
               (existingTask as any).allRemoved = true;
               target[symbolEventName] = null;
+              if (isIEOrEdge) {
+                existingTask.eventName = arguments[0];
+              }
             }
             existingTask.zone.cancelTask(existingTask);
             if (returnTarget) {
