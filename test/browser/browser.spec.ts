@@ -2667,7 +2667,7 @@ describe('Zone', function() {
         'pointer event in IE',
         ifEnvSupports(
             () => {
-              return getIEVersion() === 10;
+              return getIEVersion() === 11;
             },
             () => {
               const pointerEventsMap: {[key: string]: string} = {
