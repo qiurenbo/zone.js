@@ -2699,6 +2699,38 @@ describe('Zone', function() {
                   evt.initEvent(key, true, true);
                   div.dispatchEvent(evt);
                 });
+
+                it(`${key} and ${pointerEventsMap[key]} should both be triggered`,
+                   (done: DoneFn) => {
+                     const logs: string[] = [];
+                     div.addEventListener(key, (event: any) => {
+                       expect(event.type).toEqual(pointerEventsMap[key]);
+                       logs.push(`${key} triggered`);
+                     });
+                     div.addEventListener(pointerEventsMap[key], (event: any) => {
+                       expect(event.type).toEqual(pointerEventsMap[key]);
+                       logs.push(`${pointerEventsMap[key]} triggered`);
+                     });
+                     const evt1 = document.createEvent('Event');
+                     evt1.initEvent(key, true, true);
+                     div.dispatchEvent(evt1);
+
+                     setTimeout(() => {
+                       expect(logs).toEqual(
+                           [`${key} triggered`, `${pointerEventsMap[key]} triggered`]);
+                     });
+
+                     const evt2 = document.createEvent('Event');
+                     evt2.initEvent(pointerEventsMap[key], true, true);
+                     div.dispatchEvent(evt2);
+
+                     setTimeout(() => {
+                       expect(logs).toEqual(
+                           [`${key} triggered`, `${pointerEventsMap[key]} triggered`]);
+                     });
+
+                     setTimeout(done);
+                   });
               });
             }));
   });
