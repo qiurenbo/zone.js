@@ -2662,5 +2662,44 @@ describe('Zone', function() {
                });
              }));
     });
+
+    describe(
+        'pointer event in IE',
+        ifEnvSupports(
+            () => {
+              return getIEVersion() === 10;
+            },
+            () => {
+              const pointerEventsMap: {[key: string]: string} = {
+                'pointercancel': 'MSPointerCancel',
+                'pointerdown': 'MSPointerDown',
+                'pointerenter': 'MSPointerEnter',
+                'pointerhover': 'MSPointerHover',
+                'pointerleave': 'MSPointerLeave',
+                'pointermove': 'MSPointerMove',
+                'pointerout': 'MSPointerOut',
+                'pointerover': 'MSPointerOver',
+                'pointerup': 'MSPointerUp'
+              };
+              let div: HTMLDivElement;
+              beforeEach(() => {
+                div = document.createElement('div');
+                document.body.appendChild(div);
+              });
+              afterEach(() => {
+                document.body.removeChild(div);
+              });
+              Object.keys(pointerEventsMap).forEach(key => {
+                it(`${key} should be registered as ${pointerEventsMap[key]}`, (done: DoneFn) => {
+                  div.addEventListener(key, (event: any) => {
+                    expect(event.type).toEqual(pointerEventsMap[key]);
+                    done();
+                  });
+                  const evt = document.createEvent('Event');
+                  evt.initEvent(key, true, true);
+                  div.dispatchEvent(evt);
+                });
+              });
+            }));
   });
 });

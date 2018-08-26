@@ -10,13 +10,25 @@
  * @suppress {missingRequire}
  */
 
-import {ADD_EVENT_LISTENER_STR, attachOriginToPatched, FALSE_STR, ObjectGetPrototypeOf, REMOVE_EVENT_LISTENER_STR, TRUE_STR, ZONE_SYMBOL_PREFIX, zoneSymbol} from './utils';
+import {ADD_EVENT_LISTENER_STR, attachOriginToPatched, FALSE_STR, isIEOrEdge, ObjectGetPrototypeOf, REMOVE_EVENT_LISTENER_STR, TRUE_STR, ZONE_SYMBOL_PREFIX, zoneSymbol} from './utils';
 
 /** @internal **/
 interface EventTaskData extends TaskData {
   // use global callback or not
   readonly useG?: boolean;
 }
+
+const pointerEventsMap: {[key: string]: string} = {
+  'pointercancel': 'MSPointerCancel',
+  'pointerdown': 'MSPointerDown',
+  'pointerenter': 'MSPointerEnter',
+  'pointerhover': 'MSPointerHover',
+  'pointerleave': 'MSPointerLeave',
+  'pointermove': 'MSPointerMove',
+  'pointerout': 'MSPointerOut',
+  'pointerover': 'MSPointerOver',
+  'pointerup': 'MSPointerUp'
+};
 
 let passiveSupported = false;
 
@@ -122,7 +134,12 @@ export function patchEventTarget(
     // event.target is needed for Samsung TV and SourceBuffer
     // || global is needed https://github.com/angular/zone.js/issues/190
     const target: any = this || event.target || _global;
-    const tasks = target[zoneSymbolEventNames[event.type][FALSE_STR]];
+    let tasks = target[zoneSymbolEventNames[event.type][FALSE_STR]];
+    if (!tasks && isIEOrEdge) {
+      const pointerMappedEvent = pointerEventsMap[event.type];
+      tasks =
+          pointerMappedEvent ? target[zoneSymbolEventNames[pointerMappedEvent]][FALSE_STR] : tasks;
+    }
     if (tasks) {
       // invoke all tasks which attached to current target with given event.type and capture = false
       // for performance concern, if task.length === 1, just invoke
@@ -154,7 +171,12 @@ export function patchEventTarget(
     // event.target is needed for Samsung TV and SourceBuffer
     // || global is needed https://github.com/angular/zone.js/issues/190
     const target: any = this || event.target || _global;
-    const tasks = target[zoneSymbolEventNames[event.type][TRUE_STR]];
+    let tasks = target[zoneSymbolEventNames[event.type][TRUE_STR]];
+    if (!tasks && isIEOrEdge) {
+      const pointerMappedEvent = pointerEventsMap[event.type];
+      tasks =
+          pointerMappedEvent ? target[zoneSymbolEventNames[pointerMappedEvent]][TRUE_STR] : tasks;
+    }
     if (tasks) {
       // invoke all tasks which attached to current target with given event.type and capture = false
       // for performance concern, if task.length === 1, just invoke
