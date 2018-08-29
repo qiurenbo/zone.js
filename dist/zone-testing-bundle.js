@@ -575,7 +575,13 @@ var Zone$1 = (function (global) {
                 }
             }
             if (nativeMicroTaskQueuePromise) {
-                nativeMicroTaskQueuePromise[symbolThen](drainMicroTaskQueue);
+                var nativeThen = nativeMicroTaskQueuePromise[symbolThen];
+                if (!nativeThen) {
+                    // native Promise is not patchable, we need to use `then` directly
+                    // issue 1078
+                    nativeThen = nativeMicroTaskQueuePromise['then'];
+                }
+                nativeThen.call(nativeMicroTaskQueuePromise, drainMicroTaskQueue);
             }
             else {
                 global[symbolSetTimeout](drainMicroTaskQueue, 0);
