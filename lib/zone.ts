@@ -781,6 +781,19 @@ const Zone: ZoneType = (function(global: any) {
         return;
       }
 
+      if (isNotScheduled && task.type === macroTask) {
+        // something wrong
+        const debugInfo = (task as any)['__zone_symbol__debug'];
+        if (debugInfo) {
+          console.log('notScheduled setInterval want to invoke', task.data.handleId, task.data.isPeriodic, new Error('invoke not scheduled setInterval').stack);
+          debugInfo.forEach((info: any) => {
+            console.log('action: ', info.action);
+            console.log('id: ', info.id);
+            console.log('stack: ', info.stack);
+          });
+        }
+      }
+
       const reEntryGuard = task.state != running;
       reEntryGuard && (task as ZoneTask<any>)._transitionTo(running, scheduled);
       task.runCount++;

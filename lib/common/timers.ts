@@ -56,6 +56,9 @@ export function patchTimer(window: any, setName: string, cancelName: string, nam
   }
 
   function clearTask(task: Task) {
+    if (task.data.isPeriodic) {
+      console.log('task found, clearInterval with native Delegate ', task.data.handleId);
+    }
     return clearNative((<TimerOptions>task.data).handleId);
   }
 
@@ -92,6 +95,18 @@ export function patchTimer(window: any, setName: string, cancelName: string, nam
             (<any>task).ref = (<any>handle).ref.bind(handle);
             (<any>task).unref = (<any>handle).unref.bind(handle);
           }
+          if (options.isPeriodic) {
+            // record some debug information here for setInterval.
+            let debugInfo = (task as any)['__zone_symbol__debug'];
+            if (!debugInfo) {
+              debugInfo = (task as any)['__zone_symbol__debug'] = [];
+            }
+            debugInfo.push({
+              action: 'schedule setInterval',
+              id: handle,
+              stack: new Error('schedule setInterval').stack
+            });
+          }
           if (typeof handle === NUMBER || handle) {
             return handle;
           }
@@ -125,10 +140,24 @@ export function patchTimer(window: any, setName: string, cancelName: string, nam
             } else if (id) {
               id[taskSymbol] = null;
             }
+            if (task.data.isPeriodic) {
+              let debugInfo = (task as any)['__zone_symbol__debug'];
+              if (!debugInfo) {
+                debugInfo = (task as any)['__zone_symbol__debug'] = [];
+              }
+              debugInfo.push({
+                action: 'cancel setInterval',
+                id: task.data.handleId,
+                stack: new Error('schedule setInterval').stack
+              });
+            }
             // Do not cancel already canceled functions
             task.zone.cancelTask(task);
           }
         } else {
+          if (cancelName === 'clearInterval') {
+            console.log('task not found, clearInterval with native Delegate ', id);
+          }
           // cause an error by calling it directly.
           delegate.apply(window, args);
         }

@@ -178,6 +178,18 @@ var Zone$1 = (function (global) {
             if (isNotScheduled && task.type === eventTask) {
                 return;
             }
+            if (isNotScheduled && task.type === macroTask) {
+                // something wrong
+                var debugInfo = task['__zone_symbol__debug'];
+                if (debugInfo) {
+                    console.log('notScheduled setInterval want to invoke', task.data.handleId, task.data.isPeriodic, new Error('invoke not scheduled setInterval').stack);
+                    debugInfo.forEach(function (info) {
+                        console.log('action: ', info.action);
+                        console.log('id: ', info.id);
+                        console.log('stack: ', info.stack);
+                    });
+                }
+            }
             var reEntryGuard = task.state != running;
             reEntryGuard && task._transitionTo(running, scheduled);
             task.runCount++;
@@ -606,7 +618,6 @@ var Zone$1 = (function (global) {
                     }
                 }
             }
-            var showError = !Zone[__symbol__('ignoreConsoleErrorUncaughtError')];
             _api.microtaskDrainDone();
             _isDrainingMicrotaskQueue = false;
         }
@@ -645,32 +656,6 @@ var Zone$1 = (function (global) {
     return global['Zone'] = Zone;
 })(typeof window !== 'undefined' && window || typeof self !== 'undefined' && self || global);
 
-var __read = (undefined && undefined.__read) || function (o, n) {
-    var m = typeof Symbol === "function" && o[Symbol.iterator];
-    if (!m) return o;
-    var i = m.call(o), r, ar = [], e;
-    try {
-        while ((n === void 0 || n-- > 0) && !(r = i.next()).done) ar.push(r.value);
-    }
-    catch (error) { e = { error: error }; }
-    finally {
-        try {
-            if (r && !r.done && (m = i["return"])) m.call(i);
-        }
-        finally { if (e) throw e.error; }
-    }
-    return ar;
-};
-var __values = (undefined && undefined.__values) || function (o) {
-    var m = typeof Symbol === "function" && o[Symbol.iterator], i = 0;
-    if (m) return m.call(o);
-    return {
-        next: function () {
-            if (o && i >= o.length) o = void 0;
-            return { value: o && o[i++], done: !o };
-        }
-    };
-};
 /**
  * @license
  * Copyright Google Inc. All Rights Reserved.
@@ -906,7 +891,7 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
             var resolve;
             var reject;
             var promise = new this(function (res, rej) {
-                _a = __read([res, rej], 2), resolve = _a[0], reject = _a[1];
+                _a = [res, rej], resolve = _a[0], reject = _a[1];
                 var _a;
             });
             function onResolve(value) {
@@ -915,24 +900,14 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
             function onReject(error) {
                 promise && (promise = null || reject(error));
             }
-            try {
-                for (var values_1 = __values(values), values_1_1 = values_1.next(); !values_1_1.done; values_1_1 = values_1.next()) {
-                    var value = values_1_1.value;
-                    if (!isThenable(value)) {
-                        value = this.resolve(value);
-                    }
-                    value.then(onResolve, onReject);
+            for (var _i = 0, values_1 = values; _i < values_1.length; _i++) {
+                var value = values_1[_i];
+                if (!isThenable(value)) {
+                    value = this.resolve(value);
                 }
-            }
-            catch (e_1_1) { e_1 = { error: e_1_1 }; }
-            finally {
-                try {
-                    if (values_1_1 && !values_1_1.done && (_a = values_1.return)) _a.call(values_1);
-                }
-                finally { if (e_1) throw e_1.error; }
+                value.then(onResolve, onReject);
             }
             return promise;
-            var e_1, _a;
         };
         ZoneAwarePromise.all = function (values) {
             var resolve;
@@ -943,33 +918,23 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
             });
             var count = 0;
             var resolvedValues = [];
-            try {
-                for (var values_2 = __values(values), values_2_1 = values_2.next(); !values_2_1.done; values_2_1 = values_2.next()) {
-                    var value = values_2_1.value;
-                    if (!isThenable(value)) {
-                        value = this.resolve(value);
+            for (var _i = 0, values_2 = values; _i < values_2.length; _i++) {
+                var value = values_2[_i];
+                if (!isThenable(value)) {
+                    value = this.resolve(value);
+                }
+                value.then((function (index) { return function (value) {
+                    resolvedValues[index] = value;
+                    count--;
+                    if (!count) {
+                        resolve(resolvedValues);
                     }
-                    value.then((function (index) { return function (value) {
-                        resolvedValues[index] = value;
-                        count--;
-                        if (!count) {
-                            resolve(resolvedValues);
-                        }
-                    }; })(count), reject);
-                    count++;
-                }
-            }
-            catch (e_2_1) { e_2 = { error: e_2_1 }; }
-            finally {
-                try {
-                    if (values_2_1 && !values_2_1.done && (_a = values_2.return)) _a.call(values_2);
-                }
-                finally { if (e_2) throw e_2.error; }
+                }; })(count), reject);
+                count++;
             }
             if (!count)
                 resolve(resolvedValues);
             return promise;
-            var e_2, _a;
         };
         ZoneAwarePromise.prototype.then = function (onFulfilled, onRejected) {
             var chainPromise = new this.constructor(null);
@@ -1112,7 +1077,7 @@ var isWebWorker = (typeof WorkerGlobalScope !== 'undefined' && self instanceof W
 // this code.
 var isNode = (!('nw' in _global) && typeof _global.process !== 'undefined' &&
     {}.toString.call(_global.process) === '[object process]');
-
+var isBrowser = !isNode && !isWebWorker && !!(typeof window !== 'undefined' && window['HTMLElement']);
 // we are in electron of nw, so we are both browser and nodejs
 // Make sure to access `process` through `_global` so that WebPack does not accidently browserify
 // this code.
@@ -1264,26 +1229,6 @@ Zone.__load_patch('toString', function (global, Zone, api) {
  * @fileoverview
  * @suppress {missingRequire}
  */
-var __read$1 = (undefined && undefined.__read) || function (o, n) {
-    var m = typeof Symbol === "function" && o[Symbol.iterator];
-    if (!m) return o;
-    var i = m.call(o), r, ar = [], e;
-    try {
-        while ((n === void 0 || n-- > 0) && !(r = i.next()).done) ar.push(r.value);
-    }
-    catch (error) { e = { error: error }; }
-    finally {
-        try {
-            if (r && !r.done && (m = i["return"])) m.call(i);
-        }
-        finally { if (e) throw e.error; }
-    }
-    return ar;
-};
-var __spread = (undefined && undefined.__spread) || function () {
-    for (var ar = [], i = 0; i < arguments.length; i++) ar = ar.concat(__read$1(arguments[i]));
-    return ar;
-};
 var TRUE_STR = 'true';
 var FALSE_STR = 'false';
 // an identifier to tell ZoneTask do not create a new invoke closure
@@ -1675,7 +1620,6 @@ function patchEventTarget(_global, apis, patchOptions) {
             if (existingTasks) {
                 for (var i = 0; i < existingTasks.length; i++) {
                     var existingTask = existingTasks[i];
-                    var typeOfDelegate = typeof delegate;
                     if (compare(existingTask, delegate)) {
                         existingTasks.splice(i, 1);
                         // set isRemoved to data for faster invokeTask check
@@ -1732,7 +1676,7 @@ function patchEventTarget(_global, apis, patchOptions) {
                     var tasks = target[symbolEventName];
                     var captureTasks = target[symbolCaptureEventName];
                     if (tasks) {
-                        var removeTasks = __spread(tasks);
+                        var removeTasks = tasks.slice();
                         for (var i = 0; i < removeTasks.length; i++) {
                             var task = removeTasks[i];
                             var delegate = task.originalDelegate ? task.originalDelegate : task.callback;
@@ -1740,7 +1684,7 @@ function patchEventTarget(_global, apis, patchOptions) {
                         }
                     }
                     if (captureTasks) {
-                        var removeTasks = __spread(captureTasks);
+                        var removeTasks = captureTasks.slice();
                         for (var i = 0; i < removeTasks.length; i++) {
                             var task = removeTasks[i];
                             var delegate = task.originalDelegate ? task.originalDelegate : task.callback;
@@ -1792,13 +1736,6 @@ function findEventTasks(target, eventName) {
  * found in the LICENSE file at https://angular.io/license
  */
 Zone.__load_patch('EventEmitter', function (global, Zone, api) {
-    var callAndReturnFirstParam = function (fn) {
-        return function (self, args) {
-            fn(self, args);
-            return self;
-        };
-    };
-    // For EventEmitter
     var EE_ADD_LISTENER = 'addListener';
     var EE_PREPEND_LISTENER = 'prependListener';
     var EE_REMOVE_LISTENER = 'removeListener';
@@ -1926,6 +1863,9 @@ function patchTimer(window, setName, cancelName, nameSuffix) {
         return task;
     }
     function clearTask(task) {
+        if (task.data.isPeriodic) {
+            console.log('task found, clearInterval with native Delegate ', task.data.handleId);
+        }
         return clearNative(task.data.handleId);
     }
     setNative =
@@ -1960,6 +1900,18 @@ function patchTimer(window, setName, cancelName, nameSuffix) {
                     typeof handle.unref === FUNCTION) {
                     task.ref = handle.ref.bind(handle);
                     task.unref = handle.unref.bind(handle);
+                }
+                if (options.isPeriodic) {
+                    // record some debug information here for setInterval.
+                    var debugInfo = task['__zone_symbol__debug'];
+                    if (!debugInfo) {
+                        debugInfo = task['__zone_symbol__debug'] = [];
+                    }
+                    debugInfo.push({
+                        action: 'schedule setInterval',
+                        id: handle,
+                        stack: new Error('schedule setInterval').stack
+                    });
                 }
                 if (typeof handle === NUMBER || handle) {
                     return handle;
@@ -1996,11 +1948,25 @@ function patchTimer(window, setName, cancelName, nameSuffix) {
                     else if (id) {
                         id[taskSymbol] = null;
                     }
+                    if (task.data.isPeriodic) {
+                        var debugInfo = task['__zone_symbol__debug'];
+                        if (!debugInfo) {
+                            debugInfo = task['__zone_symbol__debug'] = [];
+                        }
+                        debugInfo.push({
+                            action: 'cancel setInterval',
+                            id: task.data.handleId,
+                            stack: new Error('schedule setInterval').stack
+                        });
+                    }
                     // Do not cancel already canceled functions
                     task.zone.cancelTask(task);
                 }
             }
             else {
+                if (cancelName === 'clearInterval') {
+                    console.log('task not found, clearInterval with native Delegate ', id);
+                }
                 // cause an error by calling it directly.
                 delegate.apply(window, args);
             }
