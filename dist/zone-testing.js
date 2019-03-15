@@ -22,6 +22,17 @@
  * @fileoverview
  * @suppress {globalThis}
  */
+var __assign = (undefined && undefined.__assign) || function () {
+    __assign = Object.assign || function(t) {
+        for (var s, i = 1, n = arguments.length; i < n; i++) {
+            s = arguments[i];
+            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
+                t[p] = s[p];
+        }
+        return t;
+    };
+    return __assign.apply(this, arguments);
+};
 var NEWLINE = '\n';
 var IGNORE_FRAMES = {};
 var creationTrace = '__creationTrace__';
@@ -111,6 +122,12 @@ Zone['longStackTraceZoneSpec'] = {
             }
             if (!task.data)
                 task.data = {};
+            if (task.type === 'eventTask') {
+                // Fix issue https://github.com/angular/zone.js/issues/1195,
+                // For event task of browser, by default, all task will share a
+                // singleton instance of data object, we should create a new one here
+                task.data = __assign({}, task.data);
+            }
             task.data[creationTrace] = trace;
         }
         return parentZoneDelegate.scheduleTask(targetZone, task);
@@ -417,6 +434,30 @@ Zone['SyncTestZoneSpec'] = SyncTestZoneSpec;
     var symbol = Zone.__symbol__;
     // whether patch jasmine clock when in fakeAsync
     var enableClockPatch = _global[symbol('fakeAsyncPatchLock')] === true;
+    var ignoreUnhandledRejection = _global[symbol('ignoreUnhandledRejection')] === true;
+    if (!ignoreUnhandledRejection) {
+        var globalErrors_1 = jasmine.GlobalErrors;
+        if (globalErrors_1 && !jasmine[symbol('GlobalErrors')]) {
+            jasmine[symbol('GlobalErrors')] = globalErrors_1;
+            jasmine.GlobalErrors = function () {
+                var instance = new globalErrors_1();
+                var originalInstall = instance.install;
+                if (originalInstall && !instance[symbol('install')]) {
+                    instance[symbol('install')] = originalInstall;
+                    instance.install = function () {
+                        var originalHandlers = process.listeners('unhandledRejection');
+                        var r = originalInstall.apply(this, arguments);
+                        process.removeAllListeners('unhandledRejection');
+                        if (originalHandlers) {
+                            originalHandlers.forEach(function (h) { return process.on('unhandledRejection', h); });
+                        }
+                        return r;
+                    };
+                }
+                return instance;
+            };
+        }
+    }
     // Monkey patch all of the jasmine DSL so that each function runs in appropriate zone.
     var jasmineEnv = jasmine.getEnv();
     ['describe', 'xdescribe', 'fdescribe'].forEach(function (methodName) {
@@ -570,7 +611,12 @@ Zone['SyncTestZoneSpec'] = SyncTestZoneSpec;
                     var proxyZoneSpec = this && this.testProxyZoneSpec;
                     if (proxyZoneSpec) {
                         var pendingTasksInfo = proxyZoneSpec.getAndClearPendingTasksInfo();
-                        error.message += pendingTasksInfo;
+                        try {
+                            // try catch here in case error.message is not writable
+                            error.message += pendingTasksInfo;
+                        }
+                        catch (err) {
+                        }
                     }
                 }
                 if (onException) {

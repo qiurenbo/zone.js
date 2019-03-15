@@ -630,6 +630,7 @@ var Zone$1 = (function (global) {
         patchMethod: function () { return noop; },
         bindArguments: function () { return []; },
         patchThen: function () { return noop; },
+        patchMacroTask: function () { return noop; },
         setNativePromise: function (NativePromise) {
             // sometimes NativePromise.resolve static function
             // is not ready yet, (such as core-js/es6.promise)
@@ -638,6 +639,19 @@ var Zone$1 = (function (global) {
                 nativeMicroTaskQueuePromise = NativePromise.resolve(0);
             }
         },
+        patchEventPrototype: function () { return noop; },
+        isIEOrEdge: function () { return false; },
+        getGlobalObjects: function () { return undefined; },
+        ObjectDefineProperty: function () { return noop; },
+        ObjectGetOwnPropertyDescriptor: function () { return undefined; },
+        ObjectCreate: function () { return undefined; },
+        ArraySlice: function () { return []; },
+        patchClass: function () { return noop; },
+        wrapWithCurrentZone: function () { return noop; },
+        filterProperties: function () { return []; },
+        attachOriginToPatched: function () { return noop; },
+        _redefineProperty: function () { return noop; },
+        patchCallbacks: function () { return noop; }
     };
     var _currentZoneFrame = { parent: null, zone: new Zone(null, null) };
     var _currentTask = null;
@@ -931,10 +945,10 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
                 reject = rej;
             });
             function onResolve(value) {
-                promise && (promise = null || resolve(value));
+                resolve(value);
             }
             function onReject(error) {
-                promise && (promise = null || reject(error));
+                reject(error);
             }
             try {
                 for (var values_1 = __values(values), values_1_1 = values_1.next(); !values_1_1.done; values_1_1 = values_1.next()) {
@@ -1002,6 +1016,13 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
             }
             return promise;
         };
+        Object.defineProperty(ZoneAwarePromise.prototype, Symbol.toStringTag, {
+            get: function () {
+                return 'Promise';
+            },
+            enumerable: true,
+            configurable: true
+        });
         ZoneAwarePromise.prototype.then = function (onFulfilled, onRejected) {
             var chainPromise = new this.constructor(null);
             var zone = Zone.current;
@@ -1096,8 +1117,26 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
         Ctor[symbolThenPatched] = true;
     }
     api.patchThen = patchThen;
+    function zoneify(fn) {
+        return function () {
+            var resultPromise = fn.apply(this, arguments);
+            if (resultPromise instanceof ZoneAwarePromise) {
+                return resultPromise;
+            }
+            var ctor = resultPromise.constructor;
+            if (!ctor[symbolThenPatched]) {
+                patchThen(ctor);
+            }
+            return resultPromise;
+        };
+    }
     if (NativePromise) {
         patchThen(NativePromise);
+        var fetch_1 = global['fetch'];
+        if (typeof fetch_1 == 'function') {
+            global[api.symbol('fetch')] = fetch_1;
+            global['fetch'] = zoneify(fetch_1);
+        }
     }
     // This is not part of public API, but it is useful for tests, so we expose it.
     Promise[Zone.__symbol__('uncaughtPromiseErrors')] = _uncaughtPromiseErrors;
@@ -1458,7 +1497,7 @@ Zone.__load_patch('toString', function (global) {
             var originalDelegate = this[ORIGINAL_DELEGATE_SYMBOL];
             if (originalDelegate) {
                 if (typeof originalDelegate === 'function') {
-                    return originalFunctionToString.apply(this[ORIGINAL_DELEGATE_SYMBOL], arguments);
+                    return originalFunctionToString.call(originalDelegate);
                 }
                 else {
                     return Object.prototype.toString.call(originalDelegate);
@@ -1467,17 +1506,17 @@ Zone.__load_patch('toString', function (global) {
             if (this === Promise) {
                 var nativePromise = global[PROMISE_SYMBOL];
                 if (nativePromise) {
-                    return originalFunctionToString.apply(nativePromise, arguments);
+                    return originalFunctionToString.call(nativePromise);
                 }
             }
             if (this === Error) {
                 var nativeError = global[ERROR_SYMBOL];
                 if (nativeError) {
-                    return originalFunctionToString.apply(nativeError, arguments);
+                    return originalFunctionToString.call(nativeError);
                 }
             }
         }
-        return originalFunctionToString.apply(this, arguments);
+        return originalFunctionToString.call(this);
     };
     newFunctionToString[ORIGINAL_DELEGATE_SYMBOL] = originalFunctionToString;
     Function.prototype.toString = newFunctionToString;
@@ -1488,7 +1527,7 @@ Zone.__load_patch('toString', function (global) {
         if (this instanceof Promise) {
             return PROMISE_OBJECT_TO_STRING;
         }
-        return originalObjectToString.apply(this, arguments);
+        return originalObjectToString.call(this);
     };
 });
 
@@ -1503,6 +1542,7 @@ Zone.__load_patch('node_util', function (global, Zone, api) {
     api.patchOnProperties = patchOnProperties;
     api.patchMethod = patchMethod;
     api.bindArguments = bindArguments;
+    api.patchMacroTask = patchMacroTask;
     setShouldCopySymbolProperties(true);
 });
 
@@ -2446,6 +2486,17 @@ Zone.__load_patch('console', function (global, Zone) {
  * @fileoverview
  * @suppress {globalThis}
  */
+var __assign = (undefined && undefined.__assign) || function () {
+    __assign = Object.assign || function(t) {
+        for (var s, i = 1, n = arguments.length; i < n; i++) {
+            s = arguments[i];
+            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
+                t[p] = s[p];
+        }
+        return t;
+    };
+    return __assign.apply(this, arguments);
+};
 var NEWLINE = '\n';
 var IGNORE_FRAMES = {};
 var creationTrace = '__creationTrace__';
@@ -2535,6 +2586,12 @@ Zone['longStackTraceZoneSpec'] = {
             }
             if (!task.data)
                 task.data = {};
+            if (task.type === 'eventTask') {
+                // Fix issue https://github.com/angular/zone.js/issues/1195,
+                // For event task of browser, by default, all task will share a
+                // singleton instance of data object, we should create a new one here
+                task.data = __assign({}, task.data);
+            }
             task.data[creationTrace] = trace;
         }
         return parentZoneDelegate.scheduleTask(targetZone, task);
@@ -2841,6 +2898,30 @@ Zone['SyncTestZoneSpec'] = SyncTestZoneSpec;
     var symbol = Zone.__symbol__;
     // whether patch jasmine clock when in fakeAsync
     var enableClockPatch = _global[symbol('fakeAsyncPatchLock')] === true;
+    var ignoreUnhandledRejection = _global[symbol('ignoreUnhandledRejection')] === true;
+    if (!ignoreUnhandledRejection) {
+        var globalErrors_1 = jasmine.GlobalErrors;
+        if (globalErrors_1 && !jasmine[symbol('GlobalErrors')]) {
+            jasmine[symbol('GlobalErrors')] = globalErrors_1;
+            jasmine.GlobalErrors = function () {
+                var instance = new globalErrors_1();
+                var originalInstall = instance.install;
+                if (originalInstall && !instance[symbol('install')]) {
+                    instance[symbol('install')] = originalInstall;
+                    instance.install = function () {
+                        var originalHandlers = process.listeners('unhandledRejection');
+                        var r = originalInstall.apply(this, arguments);
+                        process.removeAllListeners('unhandledRejection');
+                        if (originalHandlers) {
+                            originalHandlers.forEach(function (h) { return process.on('unhandledRejection', h); });
+                        }
+                        return r;
+                    };
+                }
+                return instance;
+            };
+        }
+    }
     // Monkey patch all of the jasmine DSL so that each function runs in appropriate zone.
     var jasmineEnv = jasmine.getEnv();
     ['describe', 'xdescribe', 'fdescribe'].forEach(function (methodName) {
@@ -2994,7 +3075,12 @@ Zone['SyncTestZoneSpec'] = SyncTestZoneSpec;
                     var proxyZoneSpec = this && this.testProxyZoneSpec;
                     if (proxyZoneSpec) {
                         var pendingTasksInfo = proxyZoneSpec.getAndClearPendingTasksInfo();
-                        error.message += pendingTasksInfo;
+                        try {
+                            // try catch here in case error.message is not writable
+                            error.message += pendingTasksInfo;
+                        }
+                        catch (err) {
+                        }
                     }
                 }
                 if (onException) {
