@@ -2304,7 +2304,7 @@ function patchTimer(window, setName, cancelName, nameSuffix) {
  */
 function patchCustomElements(_global, api) {
     var _a = api.getGlobalObjects(), isBrowser = _a.isBrowser, isMix = _a.isMix;
-    if ((!isBrowser && !isMix) || !('customElements' in _global)) {
+    if ((!isBrowser && !isMix) || !_global['customElements'] || !('customElements' in _global)) {
         return;
     }
     var callbacks = ['connectedCallback', 'disconnectedCallback', 'adoptedCallback', 'attributeChangedCallback'];
@@ -2423,6 +2423,10 @@ function _tryDefineProperty(obj, prop, desc, originalConfigurableFlag) {
  * found in the LICENSE file at https://angular.io/license
  */
 function eventTargetPatch(_global, api) {
+    if (Zone[api.symbol('patchEventTarget')]) {
+        // EventTarget is already patched.
+        return;
+    }
     var _a = api.getGlobalObjects(), eventNames = _a.eventNames, zoneSymbolEventNames = _a.zoneSymbolEventNames, TRUE_STR = _a.TRUE_STR, FALSE_STR = _a.FALSE_STR, ZONE_SYMBOL_PREFIX = _a.ZONE_SYMBOL_PREFIX;
     //  predefine all __zone_symbol__ + eventName + true/false string
     for (var i = 0; i < eventNames.length; i++) {
@@ -2727,7 +2731,11 @@ function propertyDescriptorPatch(api, _global) {
             patchFilteredProperties(Worker_1.prototype, workerEventNames, ignoreProperties);
         }
     }
-    patchFilteredProperties(XMLHttpRequest.prototype, XMLHttpRequestEventNames, ignoreProperties);
+    var XMLHttpRequest = _global['XMLHttpRequest'];
+    if (XMLHttpRequest) {
+        // XMLHttpRequest is not available in ServiceWorker, so we need to check here
+        patchFilteredProperties(XMLHttpRequest.prototype, XMLHttpRequestEventNames, ignoreProperties);
+    }
     var XMLHttpRequestEventTarget = _global['XMLHttpRequestEventTarget'];
     if (XMLHttpRequestEventTarget) {
         patchFilteredProperties(XMLHttpRequestEventTarget && XMLHttpRequestEventTarget.prototype, XMLHttpRequestEventNames, ignoreProperties);
@@ -2815,6 +2823,11 @@ Zone.__load_patch('XHR', function (global, Zone) {
     var XHR_URL = zoneSymbol('xhrURL');
     var XHR_ERROR_BEFORE_SCHEDULED = zoneSymbol('xhrErrorBeforeScheduled');
     function patchXHR(window) {
+        var XMLHttpRequest = window['XMLHttpRequest'];
+        if (!XMLHttpRequest) {
+            // XMLHttpRequest is not available in service worker
+            return;
+        }
         var XMLHttpRequestPrototype = XMLHttpRequest.prototype;
         function findPendingTask(target) {
             return target[XHR_TASK];
