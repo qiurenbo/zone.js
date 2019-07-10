@@ -2301,108 +2301,6 @@
      * Use of this source code is governed by an MIT-style license that can be
      * found in the LICENSE file at https://angular.io/license
      */
-    /*
-     * This is necessary for Chrome and Chrome mobile, to enable
-     * things like redefining `createdCallback` on an element.
-     */
-    var zoneSymbol$1 = Zone.__symbol__;
-    var _defineProperty = Object[zoneSymbol$1('defineProperty')] = Object.defineProperty;
-    var _getOwnPropertyDescriptor = Object[zoneSymbol$1('getOwnPropertyDescriptor')] =
-        Object.getOwnPropertyDescriptor;
-    var _create = Object.create;
-    var unconfigurablesKey = zoneSymbol$1('unconfigurables');
-    function propertyPatch() {
-        Object.defineProperty = function (obj, prop, desc) {
-            if (isUnconfigurable(obj, prop)) {
-                throw new TypeError('Cannot assign to read only property \'' + prop + '\' of ' + obj);
-            }
-            var originalConfigurableFlag = desc.configurable;
-            if (prop !== 'prototype') {
-                desc = rewriteDescriptor(obj, prop, desc);
-            }
-            return _tryDefineProperty(obj, prop, desc, originalConfigurableFlag);
-        };
-        Object.defineProperties = function (obj, props) {
-            Object.keys(props).forEach(function (prop) {
-                Object.defineProperty(obj, prop, props[prop]);
-            });
-            return obj;
-        };
-        Object.create = function (obj, proto) {
-            if (typeof proto === 'object' && !Object.isFrozen(proto)) {
-                Object.keys(proto).forEach(function (prop) {
-                    proto[prop] = rewriteDescriptor(obj, prop, proto[prop]);
-                });
-            }
-            return _create(obj, proto);
-        };
-        Object.getOwnPropertyDescriptor = function (obj, prop) {
-            var desc = _getOwnPropertyDescriptor(obj, prop);
-            if (desc && isUnconfigurable(obj, prop)) {
-                desc.configurable = false;
-            }
-            return desc;
-        };
-    }
-    function isUnconfigurable(obj, prop) {
-        return obj && obj[unconfigurablesKey] && obj[unconfigurablesKey][prop];
-    }
-    function rewriteDescriptor(obj, prop, desc) {
-        // issue-927, if the desc is frozen, don't try to change the desc
-        if (!Object.isFrozen(desc)) {
-            desc.configurable = true;
-        }
-        if (!desc.configurable) {
-            // issue-927, if the obj is frozen, don't try to set the desc to obj
-            if (!obj[unconfigurablesKey] && !Object.isFrozen(obj)) {
-                _defineProperty(obj, unconfigurablesKey, { writable: true, value: {} });
-            }
-            if (obj[unconfigurablesKey]) {
-                obj[unconfigurablesKey][prop] = true;
-            }
-        }
-        return desc;
-    }
-    function _tryDefineProperty(obj, prop, desc, originalConfigurableFlag) {
-        try {
-            return _defineProperty(obj, prop, desc);
-        }
-        catch (error) {
-            if (desc.configurable) {
-                // In case of errors, when the configurable flag was likely set by rewriteDescriptor(), let's
-                // retry with the original flag value
-                if (typeof originalConfigurableFlag == 'undefined') {
-                    delete desc.configurable;
-                }
-                else {
-                    desc.configurable = originalConfigurableFlag;
-                }
-                try {
-                    return _defineProperty(obj, prop, desc);
-                }
-                catch (error) {
-                    var descJson = null;
-                    try {
-                        descJson = JSON.stringify(desc);
-                    }
-                    catch (error) {
-                        descJson = desc.toString();
-                    }
-                    console.log("Attempting to configure '" + prop + "' with descriptor '" + descJson + "' on object '" + obj + "' and got error, giving up: " + error);
-                }
-            }
-            else {
-                throw error;
-            }
-        }
-    }
-    /**
-     * @license
-     * Copyright Google Inc. All Rights Reserved.
-     *
-     * Use of this source code is governed by an MIT-style license that can be
-     * found in the LICENSE file at https://angular.io/license
-     */
     function eventTargetPatch(_global, api) {
         if (Zone[api.symbol('patchEventTarget')]) {
             // EventTarget is already patched.
@@ -2779,7 +2677,6 @@
     });
     Zone.__load_patch('on_property', function (global, Zone, api) {
         propertyDescriptorPatch(api, global);
-        propertyPatch();
     });
     Zone.__load_patch('customElements', function (global, Zone, api) {
         patchCustomElements(global, api);

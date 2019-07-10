@@ -2973,6 +2973,9 @@
     (function (_global) {
         _global[Zone.__symbol__('legacyPatch')] = function () {
             var Zone = _global['Zone'];
+            Zone.__load_patch('defineProperty', function () {
+                propertyPatch();
+            });
             Zone.__load_patch('registerElement', function (global, Zone, api) {
                 registerElementPatch(global, api);
             });
@@ -3206,7 +3209,6 @@
     });
     Zone.__load_patch('on_property', function (global, Zone, api) {
         propertyDescriptorPatch(api, global);
-        propertyPatch();
     });
     Zone.__load_patch('customElements', function (global, Zone, api) {
         patchCustomElements(global, api);

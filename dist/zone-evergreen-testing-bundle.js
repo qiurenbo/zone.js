@@ -2172,48 +2172,11 @@
 	const _defineProperty = Object[zoneSymbol$1('defineProperty')] = Object.defineProperty;
 	const _getOwnPropertyDescriptor = Object[zoneSymbol$1('getOwnPropertyDescriptor')] =
 	    Object.getOwnPropertyDescriptor;
-	const _create = Object.create;
 	const unconfigurablesKey = zoneSymbol$1('unconfigurables');
-	function propertyPatch() {
-	    Object.defineProperty = function (obj, prop, desc) {
-	        if (isUnconfigurable(obj, prop)) {
-	            throw new TypeError('Cannot assign to read only property \'' + prop + '\' of ' + obj);
-	        }
-	        const originalConfigurableFlag = desc.configurable;
-	        if (prop !== 'prototype') {
-	            desc = rewriteDescriptor(obj, prop, desc);
-	        }
-	        return _tryDefineProperty(obj, prop, desc, originalConfigurableFlag);
-	    };
-	    Object.defineProperties = function (obj, props) {
-	        Object.keys(props).forEach(function (prop) {
-	            Object.defineProperty(obj, prop, props[prop]);
-	        });
-	        return obj;
-	    };
-	    Object.create = function (obj, proto) {
-	        if (typeof proto === 'object' && !Object.isFrozen(proto)) {
-	            Object.keys(proto).forEach(function (prop) {
-	                proto[prop] = rewriteDescriptor(obj, prop, proto[prop]);
-	            });
-	        }
-	        return _create(obj, proto);
-	    };
-	    Object.getOwnPropertyDescriptor = function (obj, prop) {
-	        const desc = _getOwnPropertyDescriptor(obj, prop);
-	        if (desc && isUnconfigurable(obj, prop)) {
-	            desc.configurable = false;
-	        }
-	        return desc;
-	    };
-	}
 	function _redefineProperty(obj, prop, desc) {
 	    const originalConfigurableFlag = desc.configurable;
 	    desc = rewriteDescriptor(obj, prop, desc);
 	    return _tryDefineProperty(obj, prop, desc, originalConfigurableFlag);
-	}
-	function isUnconfigurable(obj, prop) {
-	    return obj && obj[unconfigurablesKey] && obj[unconfigurablesKey][prop];
 	}
 	function rewriteDescriptor(obj, prop, desc) {
 	    // issue-927, if the desc is frozen, don't try to change the desc
@@ -2852,7 +2815,6 @@
 	});
 	Zone.__load_patch('on_property', (global, Zone, api) => {
 	    propertyDescriptorPatch(api, global);
-	    propertyPatch();
 	});
 	Zone.__load_patch('customElements', (global, Zone, api) => {
 	    patchCustomElements(global, api);
