@@ -664,16 +664,6 @@ var Zone$1 = (function (global) {
     return global['Zone'] = Zone;
 })(typeof window !== 'undefined' && window || typeof self !== 'undefined' && self || global);
 
-var __values = (undefined && undefined.__values) || function (o) {
-    var m = typeof Symbol === "function" && o[Symbol.iterator], i = 0;
-    if (m) return m.call(o);
-    return {
-        next: function () {
-            if (o && i >= o.length) o = void 0;
-            return { value: o && o[i++], done: !o };
-        }
-    };
-};
 /**
  * @license
  * Copyright Google Inc. All Rights Reserved.
@@ -944,7 +934,6 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
             return resolvePromise(new this(null), REJECTED, error);
         };
         ZoneAwarePromise.race = function (values) {
-            var e_1, _a;
             var resolve;
             var reject;
             var promise = new this(function (res, rej) {
@@ -957,26 +946,16 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
             function onReject(error) {
                 reject(error);
             }
-            try {
-                for (var values_1 = __values(values), values_1_1 = values_1.next(); !values_1_1.done; values_1_1 = values_1.next()) {
-                    var value = values_1_1.value;
-                    if (!isThenable(value)) {
-                        value = this.resolve(value);
-                    }
-                    value.then(onResolve, onReject);
+            for (var _i = 0, values_1 = values; _i < values_1.length; _i++) {
+                var value = values_1[_i];
+                if (!isThenable(value)) {
+                    value = this.resolve(value);
                 }
-            }
-            catch (e_1_1) { e_1 = { error: e_1_1 }; }
-            finally {
-                try {
-                    if (values_1_1 && !values_1_1.done && (_a = values_1.return)) _a.call(values_1);
-                }
-                finally { if (e_1) throw e_1.error; }
+                value.then(onResolve, onReject);
             }
             return promise;
         };
         ZoneAwarePromise.all = function (values) {
-            var e_2, _a;
             var resolve;
             var reject;
             var promise = new this(function (res, rej) {
@@ -1003,18 +982,9 @@ Zone.__load_patch('ZoneAwarePromise', function (global, Zone, api) {
                 valueIndex++;
             };
             var this_1 = this;
-            try {
-                for (var values_2 = __values(values), values_2_1 = values_2.next(); !values_2_1.done; values_2_1 = values_2.next()) {
-                    var value = values_2_1.value;
-                    _loop_2(value);
-                }
-            }
-            catch (e_2_1) { e_2 = { error: e_2_1 }; }
-            finally {
-                try {
-                    if (values_2_1 && !values_2_1.done && (_a = values_2.return)) _a.call(values_2);
-                }
-                finally { if (e_2) throw e_2.error; }
+            for (var _i = 0, values_2 = values; _i < values_2.length; _i++) {
+                var value = values_2[_i];
+                _loop_2(value);
             }
             // Make the unresolvedCount zero-based again.
             unresolvedCount -= 2;
@@ -2906,7 +2876,13 @@ Zone['SyncTestZoneSpec'] = SyncTestZoneSpec;
     var syncZone = ambientZone.fork(new SyncTestZoneSpec('jasmine.describe'));
     var symbol = Zone.__symbol__;
     // whether patch jasmine clock when in fakeAsync
-    var enableClockPatch = _global[symbol('fakeAsyncPatchLock')] === true;
+    var disablePatchingJasmineClock = _global[symbol('fakeAsyncDisablePatchingClock')] === true;
+    // the original variable name fakeAsyncPatchLock is not accurate, so the name will be
+    // fakeAsyncAutoFakeAsyncWhenClockPatched and if this enablePatchingJasmineClock is false, we also
+    // automatically disable the auto jump into fakeAsync feature
+    var enableAutoFakeAsyncWhenClockPatched = !disablePatchingJasmineClock &&
+        ((_global[symbol('fakeAsyncPatchLock')] === true) ||
+            (_global[symbol('fakeAsyncAutoFakeAsyncWhenClockPatched')] === true));
     var ignoreUnhandledRejection = _global[symbol('ignoreUnhandledRejection')] === true;
     if (!ignoreUnhandledRejection) {
         var globalErrors_1 = jasmine.GlobalErrors;
@@ -2955,48 +2931,50 @@ Zone['SyncTestZoneSpec'] = SyncTestZoneSpec;
             return originalJasmineFn.apply(this, arguments);
         };
     });
-    // need to patch jasmine.clock().mockDate and jasmine.clock().tick() so
-    // they can work properly in FakeAsyncTest
-    var originalClockFn = (jasmine[symbol('clock')] = jasmine['clock']);
-    jasmine['clock'] = function () {
-        var clock = originalClockFn.apply(this, arguments);
-        if (!clock[symbol('patched')]) {
-            clock[symbol('patched')] = symbol('patched');
-            var originalTick_1 = (clock[symbol('tick')] = clock.tick);
-            clock.tick = function () {
-                var fakeAsyncZoneSpec = Zone.current.get('FakeAsyncTestZoneSpec');
-                if (fakeAsyncZoneSpec) {
-                    return fakeAsyncZoneSpec.tick.apply(fakeAsyncZoneSpec, arguments);
+    if (!disablePatchingJasmineClock) {
+        // need to patch jasmine.clock().mockDate and jasmine.clock().tick() so
+        // they can work properly in FakeAsyncTest
+        var originalClockFn_1 = (jasmine[symbol('clock')] = jasmine['clock']);
+        jasmine['clock'] = function () {
+            var clock = originalClockFn_1.apply(this, arguments);
+            if (!clock[symbol('patched')]) {
+                clock[symbol('patched')] = symbol('patched');
+                var originalTick_1 = (clock[symbol('tick')] = clock.tick);
+                clock.tick = function () {
+                    var fakeAsyncZoneSpec = Zone.current.get('FakeAsyncTestZoneSpec');
+                    if (fakeAsyncZoneSpec) {
+                        return fakeAsyncZoneSpec.tick.apply(fakeAsyncZoneSpec, arguments);
+                    }
+                    return originalTick_1.apply(this, arguments);
+                };
+                var originalMockDate_1 = (clock[symbol('mockDate')] = clock.mockDate);
+                clock.mockDate = function () {
+                    var fakeAsyncZoneSpec = Zone.current.get('FakeAsyncTestZoneSpec');
+                    if (fakeAsyncZoneSpec) {
+                        var dateTime = arguments.length > 0 ? arguments[0] : new Date();
+                        return fakeAsyncZoneSpec.setCurrentRealTime.apply(fakeAsyncZoneSpec, dateTime && typeof dateTime.getTime === 'function' ? [dateTime.getTime()] :
+                            arguments);
+                    }
+                    return originalMockDate_1.apply(this, arguments);
+                };
+                // for auto go into fakeAsync feature, we need the flag to enable it
+                if (enableAutoFakeAsyncWhenClockPatched) {
+                    ['install', 'uninstall'].forEach(function (methodName) {
+                        var originalClockFn = (clock[symbol(methodName)] = clock[methodName]);
+                        clock[methodName] = function () {
+                            var FakeAsyncTestZoneSpec = Zone['FakeAsyncTestZoneSpec'];
+                            if (FakeAsyncTestZoneSpec) {
+                                jasmine[symbol('clockInstalled')] = 'install' === methodName;
+                                return;
+                            }
+                            return originalClockFn.apply(this, arguments);
+                        };
+                    });
                 }
-                return originalTick_1.apply(this, arguments);
-            };
-            var originalMockDate_1 = (clock[symbol('mockDate')] = clock.mockDate);
-            clock.mockDate = function () {
-                var fakeAsyncZoneSpec = Zone.current.get('FakeAsyncTestZoneSpec');
-                if (fakeAsyncZoneSpec) {
-                    var dateTime = arguments.length > 0 ? arguments[0] : new Date();
-                    return fakeAsyncZoneSpec.setCurrentRealTime.apply(fakeAsyncZoneSpec, dateTime && typeof dateTime.getTime === 'function' ? [dateTime.getTime()] :
-                        arguments);
-                }
-                return originalMockDate_1.apply(this, arguments);
-            };
-            // for auto go into fakeAsync feature, we need the flag to enable it
-            if (enableClockPatch) {
-                ['install', 'uninstall'].forEach(function (methodName) {
-                    var originalClockFn = (clock[symbol(methodName)] = clock[methodName]);
-                    clock[methodName] = function () {
-                        var FakeAsyncTestZoneSpec = Zone['FakeAsyncTestZoneSpec'];
-                        if (FakeAsyncTestZoneSpec) {
-                            jasmine[symbol('clockInstalled')] = 'install' === methodName;
-                            return;
-                        }
-                        return originalClockFn.apply(this, arguments);
-                    };
-                });
             }
-        }
-        return clock;
-    };
+            return clock;
+        };
+    }
     /**
      * Gets a function wrapping the body of a Jasmine `describe` block to execute in a
      * synchronous-only zone.
@@ -3010,7 +2988,7 @@ Zone['SyncTestZoneSpec'] = SyncTestZoneSpec;
         var isClockInstalled = !!jasmine[symbol('clockInstalled')];
         var testProxyZoneSpec = queueRunner.testProxyZoneSpec;
         var testProxyZone = queueRunner.testProxyZone;
-        if (isClockInstalled && enableClockPatch) {
+        if (isClockInstalled && enableAutoFakeAsyncWhenClockPatched) {
             // auto run a fakeAsync
             var fakeAsyncModule = Zone[Zone.__symbol__('fakeAsyncTest')];
             if (fakeAsyncModule && typeof fakeAsyncModule.fakeAsync === 'function') {
@@ -3369,26 +3347,6 @@ Zone.__load_patch('asynctest', function (global, Zone, api) {
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
-var __read = (undefined && undefined.__read) || function (o, n) {
-    var m = typeof Symbol === "function" && o[Symbol.iterator];
-    if (!m) return o;
-    var i = m.call(o), r, ar = [], e;
-    try {
-        while ((n === void 0 || n-- > 0) && !(r = i.next()).done) ar.push(r.value);
-    }
-    catch (error) { e = { error: error }; }
-    finally {
-        try {
-            if (r && !r.done && (m = i["return"])) m.call(i);
-        }
-        finally { if (e) throw e.error; }
-    }
-    return ar;
-};
-var __spread = (undefined && undefined.__spread) || function () {
-    for (var ar = [], i = 0; i < arguments.length; i++) ar = ar.concat(__read(arguments[i]));
-    return ar;
-};
 (function (global) {
     var OriginalDate = global.Date;
     var FakeDate = /** @class */ (function () {
@@ -3400,7 +3358,7 @@ var __spread = (undefined && undefined.__spread) || function () {
             }
             else {
                 var args = Array.prototype.slice.call(arguments);
-                return new (OriginalDate.bind.apply(OriginalDate, __spread([void 0], args)))();
+                return new (OriginalDate.bind.apply(OriginalDate, [void 0].concat(args)))();
             }
         }
         FakeDate.now = function () {
@@ -3496,7 +3454,7 @@ var __spread = (undefined && undefined.__spread) || function () {
                     if (doTick) {
                         doTick(this._currentTime - lastCurrentTime);
                     }
-                    var retval = current_1.func.apply(global, current_1.args);
+                    var retval = current_1.func.apply(global, current_1.isRequestAnimationFrame ? [this._currentTime] : current_1.args);
                     if (!retval) {
                         // Uncaught exception in the current scheduled function. Stop processing the queue.
                         break;
